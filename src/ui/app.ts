@@ -85,11 +85,10 @@ export function mountApp(root: HTMLElement): void {
       view.progress('Drawing', null);
       await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
       if (run !== current) return;
-      await view.showScene(scene, stats);
-      if (run !== current) return;
+      view.showScene(scene, stats);
       if (DEBUG) {
         // Exposed for validation from the console: summitSketch.scene, summitSketch.stats.
-        (globalThis as Record<string, unknown>).summitSketch = { scene, stats };
+        (globalThis as Record<string, unknown>).summitSketch = { scene, stats, view };
         console.info('[horizon]', JSON.stringify(stats));
       }
     } catch (err) {

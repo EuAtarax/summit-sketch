@@ -251,6 +251,8 @@ input:focus-visible + *,
 .viewer-status {
   position: absolute;
   inset: 0;
+  z-index: 1;
+  background: var(--snow);
   display: grid;
   place-content: center;
   justify-items: center;
@@ -273,18 +275,36 @@ input:focus-visible + *,
   transition: width 120ms linear;
 }
 
-.viewer-scroller {
-  flex: 1;
-  overflow-x: auto;
-  overflow-y: hidden;
-  display: flex;
-  align-items: center;
-  overscroll-behavior-x: contain;
+.viewer-pano {
+  position: absolute;
+  inset: 0;
 }
 
-.viewer-scroller canvas {
+.pano-canvas {
   display: block;
-  flex: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.pano-canvas:active {
+  cursor: grabbing;
+}
+
+.pano-canvas:focus-visible {
+  outline-offset: -3px;
+}
+
+.pano-zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.pano-zoom-button {
+  background: rgb(244 246 247 / 0.92);
+  box-shadow: 0 1px 4px rgb(31 42 51 / 0.25);
 }
 
 .viewer-info {
