@@ -76,7 +76,14 @@ export function createMapPicker(
       const style: L.CircleMarkerOptions =
         state === 'pending'
           ? { radius: 8, color: TRAIL_RED, weight: 2, fillOpacity: 0, dashArray: '3 3' }
-          : { radius: 9, color: '#FFFFFF', weight: 3, fillColor: TRAIL_RED, fillOpacity: 1 };
+          : {
+              radius: 9,
+              color: '#FFFFFF',
+              weight: 3,
+              fillColor: TRAIL_RED,
+              fillOpacity: 1,
+              dashArray: '',
+            };
       if (marker) marker.setLatLng([lat, lon]).setStyle(style);
       else marker = L.circleMarker([lat, lon], { ...style, interactive: false }).addTo(map);
       marker.bringToFront();

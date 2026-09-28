@@ -171,7 +171,7 @@ export function mountApp(root: HTMLElement): void {
       view.showScene(scene, stats);
       if (DEBUG) {
         // Exposed for validation from the console.
-        (globalThis as Record<string, unknown>).summitSketch = { scene, stats, view, selected: s };
+        Object.assign(debugHandle, { scene, stats, view, selected: s });
         console.info('[horizon]', JSON.stringify(stats));
       }
     } catch (err) {
@@ -189,6 +189,8 @@ export function mountApp(root: HTMLElement): void {
   const r = Number(params.get('r'));
   if ((RADIUS_OPTIONS_KM as readonly number[]).includes(r)) sheet.setRadius(r as RadiusKm);
   updateHint(picker.zoom);
+  const debugHandle: Record<string, unknown> = { picker, peaks };
+  if (DEBUG) (globalThis as Record<string, unknown>).summitSketch = debugHandle;
   if (params.has('lat') && params.has('lon') && Math.abs(lat) <= 85 && Math.abs(lon) <= 180) {
     picker.focus(lat, lon, 14);
     const exact = params.get('exact') === '1';
