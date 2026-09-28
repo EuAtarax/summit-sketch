@@ -61,6 +61,7 @@ The horizon shape and the direction of major peaks should match.
 - [ ] Place and peak search via Nominatim (submit only)
 - [ ] Shareable URLs: `?lat=…&lon=…&style=…&r=…`
 - [ ] Clear empty, loading, offline, and error states
+- [ ] Map picker layer choice: **normal** (OSM standard), **terrain** (e.g. OpenTopoMap) and **satellite**. Only free sources whose terms allow this use (check the license first; e.g. EOX Sentinel-2 cloudless is non-commercial with attribution, Esri World Imagery has its own terms). Remember the choice, and show each layer's attribution.
 
 ## Phase 6: Remaining 2D styles
 - [ ] Ink panorama, Watercolor, Retro poster, Blueprint, Synthwave
