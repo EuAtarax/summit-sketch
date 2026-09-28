@@ -3,15 +3,15 @@
 Tick boxes as work completes. Each phase ends with a manual test checklist for Niklas.
 
 ## Phase 0: Setup
-- [ ] Vite + TS strict project, ESLint + Prettier, Vitest
-- [ ] Folder structure per CLAUDE.md
-- [ ] GitHub Actions deploy to GitHub Pages (or Cloudflare Pages), so the app is live from day one
-- [ ] Footer with data attribution
+- [x] Vite + TS strict project, ESLint + Prettier, Vitest
+- [x] Folder structure per CLAUDE.md
+- [x] GitHub Actions deploy to GitHub Pages (or Cloudflare Pages), so the app is live from day one
+- [x] Footer with data attribution
 
 **Done when:** `npm test` passes and the deployed URL shows the empty shell on a phone.
 
 ## Phase 1: Horizon engine (the core, and the priority)
-- [ ] **Data spike:** fetch one Terrarium tile from the browser. Confirm CORS works and decode one known elevation. Report the result before continuing.
+- [x] **Data spike:** fetch one Terrarium tile from the browser. Confirm CORS works and decode one known elevation. Report the result before continuing.
 - [ ] `geo/` tile math + geodesy with tests
 - [ ] `ElevationSource` interface, `TerrariumSource` with an in-memory LRU tile cache, and `SyntheticSource`
 - [ ] Summit snap (highest cell within ~150 m)
