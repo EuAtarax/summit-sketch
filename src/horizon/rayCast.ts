@@ -4,6 +4,11 @@ import { rayOrigin, rayPointToPx, type RaySamples } from './sampling';
 
 const D2R = Math.PI / 180;
 const R2D = 180 / Math.PI;
+/**
+ * DEM values below this count as sea. Open water is stored as bathymetry (negative) or as
+ * exactly 0, and coastlines carry sub-meter noise (0..1 m) that would punch holes in it.
+ */
+export const SEA_MAX_M = 1;
 
 export interface CastParams {
   lat: number;
@@ -110,7 +115,7 @@ export function castRays(p: CastParams): CastResult {
       rayPointToPx(o, sinT, cosT, sinD[i]!, cosD[i]!, wpx, pt);
       const raw = grid!.sample(pt.x, pt.y);
       if (Number.isNaN(raw)) continue;
-      const isSea = raw <= 0;
+      const isSea = raw < SEA_MAX_M;
       const h = p.clampSeaLevel && isSea ? 0 : raw;
       const d = dist[i]!;
       const t = (h - drop[i]! - hObs) / d;

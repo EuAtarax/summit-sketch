@@ -136,10 +136,15 @@ describe('sea intervals', () => {
   it.each([
     ['bathymetry', -150],
     ['flat 0 m water', 0],
+    // Coastal tiles mix 0, negative and sub-meter positive noise; none of it may read as land.
+    ['0 m water with sub-meter noise', -1],
   ])('marks visible open sea (%s) on rays over the ocean only', async (_, seaElev) => {
     const coastLat = OBS.lat - 0.05; // ~5.5 km south of the observer
     const hill = coneTerrain([{ lat: OBS.lat, lon: OBS.lon, height: 800, radiusM: 3000 }], 100);
-    const terrain = (lat: number, lon: number) => (lat < coastLat ? seaElev : hill(lat, lon));
+    const noisy = (lat: number, lon: number) =>
+      Math.sin(lat * 9000) * Math.cos(lon * 7000) > 0.3 ? 0.9 : Math.sin(lat * 5000) > 0.5 ? -3 : 0;
+    const sea = (lat: number, lon: number) => (seaElev === -1 ? noisy(lat, lon) : seaElev);
+    const terrain = (lat: number, lon: number) => (lat < coastLat ? sea(lat, lon) : hill(lat, lon));
     const scene = await computeScene(
       new SyntheticSource(terrain),
       { ...OBS, groundElev: 900 },
