@@ -50,8 +50,9 @@ export interface CastResult {
  * at least minCrestDropDeg below it (filters DEM noise on slopes facing the observer).
  * The last visible point of every ray is always kept: it is the skyline.
  * Each visible sample covers the image column from the previous running max up to its own
- * angle; where that sample is sea (raw DEM elevation below 0, i.e. bathymetry), the
- * interval is recorded as sea. Note: land below sea level (polders, Dead Sea shore)
+ * angle; where that sample is sea, the interval is recorded as sea. Sea is a DEM value
+ * of 0 or below: the tiles store open water either as bathymetry (negative) or, at
+ * higher zooms near coasts, as exactly 0. Land below sea level (polders, Dead Sea shore)
  * counts as sea too.
  * Comparisons use tan(angle), which is monotonic, and convert to degrees only on output.
  */
@@ -109,7 +110,7 @@ export function castRays(p: CastParams): CastResult {
       rayPointToPx(o, sinT, cosT, sinD[i]!, cosD[i]!, wpx, pt);
       const raw = grid!.sample(pt.x, pt.y);
       if (Number.isNaN(raw)) continue;
-      const isSea = raw < 0;
+      const isSea = raw <= 0;
       const h = p.clampSeaLevel && isSea ? 0 : raw;
       const d = dist[i]!;
       const t = (h - drop[i]! - hObs) / d;

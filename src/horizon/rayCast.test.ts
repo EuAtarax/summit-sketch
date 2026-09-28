@@ -133,10 +133,13 @@ describe('computeScene', () => {
 });
 
 describe('sea intervals', () => {
-  it('marks visible open sea on rays over the ocean only', async () => {
+  it.each([
+    ['bathymetry', -150],
+    ['flat 0 m water', 0],
+  ])('marks visible open sea (%s) on rays over the ocean only', async (_, seaElev) => {
     const coastLat = OBS.lat - 0.05; // ~5.5 km south of the observer
     const hill = coneTerrain([{ lat: OBS.lat, lon: OBS.lon, height: 800, radiusM: 3000 }], 100);
-    const terrain = (lat: number, lon: number) => (lat < coastLat ? -150 : hill(lat, lon));
+    const terrain = (lat: number, lon: number) => (lat < coastLat ? seaElev : hill(lat, lon));
     const scene = await computeScene(
       new SyntheticSource(terrain),
       { ...OBS, groundElev: 900 },
