@@ -49,7 +49,7 @@ The horizon shape and the direction of major peaks should match.
 - [ ] Labels off by default; the toggle is remembered
 
 ## Phase 4: Viewer + export
-- [ ] 360° viewer: drag/swipe with inertia, wrap-around, pinch to zoom, compass strip with N/E/S/W and degree ticks
+- [x] 360° viewer: drag/swipe with inertia, wrap-around, pinch to zoom, compass strip with N/E/S/W and degree ticks
 - [ ] Tap a label to show name, elevation, and distance
 - [ ] Export PNG of the full 360° (default 16 px/deg) and of the current view. Cap at 16 M pixels because of the iOS canvas limit.
 - [ ] Exports include a small footer with summit name, coordinates, style, and attribution

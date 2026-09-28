@@ -59,6 +59,7 @@ interface PanoramaScene {
   horizonAngle: Float32Array; // outermost visible angle per ray
   horizonDist: Float32Array;  // distance of that outermost visible crest per ray
   ridgelines: Ridgeline[];    // all visible crests, linked across rays
+  sea: { offsets: Uint32Array; lo: Float32Array; hi: Float32Array }; // visible open-sea angle intervals per ray
 }
 interface ViewTransform {
   width: number; height: number;
@@ -71,6 +72,7 @@ interface ViewTransform {
 }
 interface PanoramaStyle {
   id: string; name: string;
+  paper: string;              // background outside the rendered content
   render(ctx: CanvasRenderingContext2D, scene: PanoramaScene, view: ViewTransform,
          opts: { labels: LabeledPeak[] | null; seed: number }): void;
 }
