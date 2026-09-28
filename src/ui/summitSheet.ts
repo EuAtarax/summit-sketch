@@ -7,6 +7,8 @@ export interface SheetSummit {
   lat: number;
   lon: number;
   elev: number;
+  /** Where the elevation comes from: the OSM ele tag or the elevation model. */
+  elevSource: 'osm' | 'dem';
   name?: string;
 }
 
@@ -86,7 +88,7 @@ export function createSummitSheet(
     },
     showSummit(s) {
       const h = document.createElement('h2');
-      h.textContent = s.name ?? 'Selected summit';
+      h.textContent = s.name ?? 'Selected point';
       const go = document.createElement('button');
       go.type = 'button';
       go.className = 'primary-button';
@@ -94,7 +96,10 @@ export function createSummitSheet(
       go.onclick = handlers.onShowView;
       show(
         h,
-        p(`${Math.round(s.elev)} m · ${formatCoords(s.lat, s.lon)}`, 'sheet-meta'),
+        p(
+          `${Math.round(s.elev)} m${s.elevSource === 'dem' ? ' (terrain model)' : ''} · ${formatCoords(s.lat, s.lon)}`,
+          'sheet-meta',
+        ),
         radiusPicker(),
         go,
       );

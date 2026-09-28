@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { destinationPoint, distanceM } from '../geo/geodesy';
 import { coneTerrain, SyntheticSource } from './syntheticSource';
-import { snapToSummit } from './snap';
+import { elevationAt, snapToSummit } from './snap';
 
 const TAP = { lat: 46.5, lon: 8.0 };
 
@@ -28,5 +28,15 @@ describe('snapToSummit', () => {
     );
     const s = await snapToSummit(source, TAP.lat, TAP.lon);
     expect(distanceM(s.lat, s.lon, near.lat, near.lon)).toBeLessThan(3);
+  });
+});
+
+describe('elevationAt', () => {
+  it('samples the DEM at exactly the given point', async () => {
+    const source = new SyntheticSource((lat) => (lat - 46) * 100_000); // 1 m per 0.00001°
+    const s = await elevationAt(source, 46.5, 8.0);
+    expect(s.lat).toBe(46.5);
+    expect(s.lon).toBe(8.0);
+    expect(s.elev).toBeCloseTo(50_000, -1); // within ~10 m (one z15 pixel is ~2 m here)
   });
 });

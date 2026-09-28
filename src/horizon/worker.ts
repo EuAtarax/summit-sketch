@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { snapToSummit } from '../terrain/snap';
+import { elevationAt, snapToSummit } from '../terrain/snap';
 import { TerrariumSource } from '../terrain/terrariumSource';
 import { linkRidges } from './link';
 import { CancelledError, castSector } from './pipeline';
@@ -58,7 +58,10 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         result.seaHi.buffer,
       ]);
     } else if (msg.type === 'snap') {
-      const result = await snapToSummit(source, msg.lat, msg.lon, msg.radiusM);
+      const result =
+        msg.radiusM > 0
+          ? await snapToSummit(source, msg.lat, msg.lon, msg.radiusM)
+          : await elevationAt(source, msg.lat, msg.lon);
       post({ type: 'snap-done', job, result });
     } else {
       const ridges = linkRidges(msg.table, msg.options);

@@ -79,7 +79,15 @@ export class HorizonEngine {
     return this.workers;
   }
 
-  /** Moves a tapped point to the highest DEM cell within radiusM, decoding off the main thread. */
+  /** DEM elevation at exactly this point, decoded off the main thread. */
+  elevation(lat: number, lon: number): Promise<SnapResult> {
+    return this.snap(lat, lon, 0);
+  }
+
+  /**
+   * Moves a point to the highest DEM cell within radiusM (0 = keep the point), decoding off
+   * the main thread.
+   */
   snap(lat: number, lon: number, radiusM = 150): Promise<SnapResult> {
     const job = this.nextJob++;
     const worker = this.pool()[0]!;

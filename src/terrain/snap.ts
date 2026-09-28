@@ -49,3 +49,21 @@ export async function snapToSummit(
   const p = tileToLonLat((best.px + 0.5) / TILE_SIZE, (best.py + 0.5) / TILE_SIZE, zoom);
   return { lat: p.lat, lon: normalizeLon(p.lon), elev: best.elev };
 }
+
+/** DEM elevation at exactly this point (bilinear at the given zoom), without snapping. */
+export async function elevationAt(
+  source: ElevationSource,
+  lat: number,
+  lon: number,
+  zoom = source.maxZoom,
+): Promise<SnapResult> {
+  const t = lonLatToTile(lat, lon, zoom);
+  const gx = t.x * TILE_SIZE;
+  const gy = t.y * TILE_SIZE;
+  const grid = new TileGrid(zoom);
+  const tiles = tilesInBox(zoom, gx - 2, gy - 2, gx + 2, gy + 2);
+  await Promise.all(
+    tiles.map(async ({ x, y }) => grid.set(x, y, await source.getTile(zoom, x, y))),
+  );
+  return { lat, lon, elev: grid.sample(gx, gy) };
+}
