@@ -12,7 +12,7 @@ Tick boxes as work completes. Each phase ends with a manual test checklist for N
 
 ## Phase 1: Horizon engine (the core, and the priority)
 - [x] **Data spike:** fetch one Terrarium tile from the browser. Confirm CORS works and decode one known elevation. Report the result before continuing.
-- [ ] `geo/` tile math + geodesy with tests
+- [x] `geo/` tile math + geodesy with tests
 - [x] `ElevationSource` interface, `TerrariumSource` with an in-memory LRU tile cache, and `SyntheticSource`
 - [x] Summit snap (highest cell within ~150 m)
 - [x] Ray casting with zoom-by-distance, curvature + refraction, and crest extraction
