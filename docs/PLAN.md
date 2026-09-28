@@ -13,14 +13,14 @@ Tick boxes as work completes. Each phase ends with a manual test checklist for N
 ## Phase 1: Horizon engine (the core, and the priority)
 - [x] **Data spike:** fetch one Terrarium tile from the browser. Confirm CORS works and decode one known elevation. Report the result before continuing.
 - [ ] `geo/` tile math + geodesy with tests
-- [ ] `ElevationSource` interface, `TerrariumSource` with an in-memory LRU tile cache, and `SyntheticSource`
-- [ ] Summit snap (highest cell within ~150 m)
-- [ ] Ray casting with zoom-by-distance, curvature + refraction, and crest extraction
-- [ ] Ridge linking into `Ridgeline[]`
-- [ ] Web Workers split by azimuth, with progress messages
-- [ ] Radius selector: 100 / 200 / 300 km (default 200)
-- [ ] Debug renderer: plain lines colored by distance, plus the horizon line and a degree grid
-- [ ] Map picker (Leaflet): tap a point, snap, then compute
+- [x] `ElevationSource` interface, `TerrariumSource` with an in-memory LRU tile cache, and `SyntheticSource`
+- [x] Summit snap (highest cell within ~150 m)
+- [x] Ray casting with zoom-by-distance, curvature + refraction, and crest extraction
+- [x] Ridge linking into `Ridgeline[]`
+- [x] Web Workers split by azimuth, with progress messages
+- [x] Radius selector: 100 / 200 / 300 km (default 200)
+- [x] Debug renderer: plain lines colored by distance, plus the horizon line and a degree grid
+- [x] Map picker (Leaflet): tap a point, snap, then compute
 
 **Tests:** a synthetic cone at a known distance gives the expected angle ±0.01°; the curvature drop at 100 km ≈ 682.8 m; a cone hidden behind a taller nearer cone produces no crest.
 
