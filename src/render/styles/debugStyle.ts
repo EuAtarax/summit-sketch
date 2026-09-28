@@ -1,4 +1,5 @@
 import type { PanoramaScene, Ridgeline } from '../../horizon/scene';
+import { rayEnvelope, raysPerVertex } from '../envelope';
 import type { PanoramaStyle } from '../style';
 import { gridStep, wrap180 } from '../viewTransform';
 
@@ -119,20 +120,17 @@ export const debugStyle: PanoramaStyle = {
       if (started) ctx.stroke();
     }
 
-    // Outer horizon
+    // Outer horizon: at most one vertex every ~2 px (highest ray wins), so ray-to-ray
+    // noise doesn't turn into sub-pixel zigzag when zoomed out.
     ctx.strokeStyle = HORIZON;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    let pen = false;
-    for (let rr = r0; rr <= r1; rr++) {
-      const a = scene.horizonAngle[ray(rr)]!;
-      if (Number.isNaN(a)) {
-        pen = false;
-        continue;
-      }
-      if (pen) ctx.lineTo(rayX(rr), v.angleToY(a));
-      else ctx.moveTo(rayX(rr), v.angleToY(a));
-      pen = true;
+    const k = raysPerVertex(n, step * ppd, 2);
+    for (const line of rayEnvelope((rr) => scene.horizonAngle[ray(rr)]!, r0, r1, k)) {
+      line.forEach(([pos, a], i) => {
+        if (i === 0) ctx.moveTo(rayX(pos), v.angleToY(a));
+        else ctx.lineTo(rayX(pos), v.angleToY(a));
+      });
     }
     ctx.stroke();
   },
