@@ -9,6 +9,7 @@ declare const self: DedicatedWorkerGlobalScope;
 
 // Each worker keeps its own tile cache across computations (~40 MB at 160 tiles).
 const source = new TerrariumSource({ cacheTiles: 160 });
+const running = new Set<number>();
 const cancelled = new Set<number>();
 
 function post(msg: FromWorker, transfer: Transferable[] = []): void {
@@ -18,10 +19,11 @@ function post(msg: FromWorker, transfer: Transferable[] = []): void {
 self.onmessage = async (e: MessageEvent<ToWorker>) => {
   const msg = e.data;
   if (msg.type === 'cancel') {
-    cancelled.add(msg.job);
+    if (running.has(msg.job)) cancelled.add(msg.job);
     return;
   }
   const { job } = msg;
+  running.add(job);
   try {
     if (msg.type === 'cast') {
       let lastPost = 0;
@@ -51,6 +53,9 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         result.crestAngle.buffer,
         result.crestDist.buffer,
         result.crestElev.buffer,
+        result.seaOffsets.buffer,
+        result.seaLo.buffer,
+        result.seaHi.buffer,
       ]);
     } else if (msg.type === 'snap') {
       const result = await snapToSummit(source, msg.lat, msg.lon, msg.radiusM);
@@ -73,6 +78,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       cancelled: err instanceof CancelledError,
     });
   } finally {
+    running.delete(job);
     cancelled.delete(job);
   }
 };

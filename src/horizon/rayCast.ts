@@ -34,6 +34,13 @@ export interface CastResult {
   crestAngle: Float32Array;
   crestDist: Float32Array;
   crestElev: Float32Array;
+  /**
+   * Visible open-sea stretches of ray r, as elevation-angle intervals (degrees, lo < hi),
+   * at indices seaOffsets[r] .. seaOffsets[r + 1] - 1.
+   */
+  seaOffsets: Uint32Array;
+  seaLo: Float32Array;
+  seaHi: Float32Array;
 }
 
 /**
@@ -42,6 +49,10 @@ export interface CastResult {
  * the last visible sample as a crest. A crest is kept only if the terrain behind it dips
  * at least minCrestDropDeg below it (filters DEM noise on slopes facing the observer).
  * The last visible point of every ray is always kept: it is the skyline.
+ * Each visible sample covers the image column from the previous running max up to its own
+ * angle; where that sample is sea (raw DEM elevation below 0, i.e. bathymetry), the
+ * interval is recorded as sea. Note: land below sea level (polders, Dead Sea shore)
+ * counts as sea too.
  * Comparisons use tan(angle), which is monotonic, and convert to degrees only on output.
  */
 export function castRays(p: CastParams): CastResult {
@@ -59,9 +70,13 @@ export function castRays(p: CastParams): CastResult {
   const cAngle: number[] = [];
   const cDist: number[] = [];
   const cElev: number[] = [];
+  const seaOffsets = new Uint32Array(rayCount + 1);
+  const sLo: number[] = [];
+  const sHi: number[] = [];
 
   for (let r = 0; r < rayCount; r++) {
     crestOffsets[r] = cAngle.length;
+    seaOffsets[r] = sLo.length;
     const theta = (p.rayStart + r) * p.azStep * D2R;
     const sinT = Math.sin(theta);
     const cosT = Math.cos(theta);
@@ -77,6 +92,9 @@ export function castRays(p: CastParams): CastResult {
     let pendD = 0;
     let pendH = 0;
     let pendMinT = 0;
+    let seaOpen = false;
+    let seaLoT = 0;
+    let seaHiT = 0;
 
     let bi = -1;
     let grid: TileGrid | undefined;
@@ -89,9 +107,10 @@ export function castRays(p: CastParams): CastResult {
         wpx = worldPx[bi]!;
       }
       rayPointToPx(o, sinT, cosT, sinD[i]!, cosD[i]!, wpx, pt);
-      let h = grid!.sample(pt.x, pt.y);
-      if (Number.isNaN(h)) continue;
-      if (p.clampSeaLevel && h < 0) h = 0;
+      const raw = grid!.sample(pt.x, pt.y);
+      if (Number.isNaN(raw)) continue;
+      const isSea = raw < 0;
+      const h = p.clampSeaLevel && isSea ? 0 : raw;
       const d = dist[i]!;
       const t = (h - drop[i]! - hObs) / d;
 
@@ -103,6 +122,23 @@ export function castRays(p: CastParams): CastResult {
             cElev.push(pendH);
           }
           pending = false;
+        }
+        if (isSea) {
+          if (seaOpen && seaHiT === maxT) {
+            seaHiT = t;
+          } else {
+            if (seaOpen) {
+              sLo.push(Math.atan(seaLoT) * R2D);
+              sHi.push(Math.atan(seaHiT) * R2D);
+            }
+            seaOpen = true;
+            seaLoT = maxT === -Infinity ? t : maxT;
+            seaHiT = t;
+          }
+        } else if (seaOpen) {
+          sLo.push(Math.atan(seaLoT) * R2D);
+          sHi.push(Math.atan(seaHiT) * R2D);
+          seaOpen = false;
         }
         maxT = t;
         maxD = d;
@@ -122,6 +158,10 @@ export function castRays(p: CastParams): CastResult {
       }
     }
 
+    if (seaOpen) {
+      sLo.push(Math.atan(seaLoT) * R2D);
+      sHi.push(Math.atan(seaHiT) * R2D);
+    }
     // The outermost visible point is the skyline; keep it regardless of the dip.
     if (pending || visible) {
       cAngle.push(Math.atan(pending ? pendT : visT) * R2D);
@@ -133,6 +173,7 @@ export function castRays(p: CastParams): CastResult {
     if (p.onProgress && (r & 63) === 63) p.onProgress(r + 1);
   }
   crestOffsets[rayCount] = cAngle.length;
+  seaOffsets[rayCount] = sLo.length;
 
   return {
     rayStart: p.rayStart,
@@ -143,6 +184,9 @@ export function castRays(p: CastParams): CastResult {
     crestAngle: Float32Array.from(cAngle),
     crestDist: Float32Array.from(cDist),
     crestElev: Float32Array.from(cElev),
+    seaOffsets,
+    seaLo: Float32Array.from(sLo),
+    seaHi: Float32Array.from(sHi),
   };
 }
 
@@ -151,6 +195,7 @@ export function mergeCastResults(parts: CastResult[]): CastResult {
   const sorted = [...parts].sort((a, b) => a.rayStart - b.rayStart);
   const rayCount = sorted.reduce((s, x) => s + x.rayCount, 0);
   const crestCount = sorted.reduce((s, x) => s + x.crestAngle.length, 0);
+  const seaCount = sorted.reduce((s, x) => s + x.seaLo.length, 0);
   const out: CastResult = {
     rayStart: sorted[0]?.rayStart ?? 0,
     rayCount,
@@ -160,19 +205,30 @@ export function mergeCastResults(parts: CastResult[]): CastResult {
     crestAngle: new Float32Array(crestCount),
     crestDist: new Float32Array(crestCount),
     crestElev: new Float32Array(crestCount),
+    seaOffsets: new Uint32Array(rayCount + 1),
+    seaLo: new Float32Array(seaCount),
+    seaHi: new Float32Array(seaCount),
   };
   let r0 = 0;
   let c0 = 0;
+  let s0 = 0;
   for (const part of sorted) {
     out.horizonAngle.set(part.horizonAngle, r0);
     out.horizonDist.set(part.horizonDist, r0);
-    for (let r = 0; r < part.rayCount; r++) out.crestOffsets[r0 + r] = c0 + part.crestOffsets[r]!;
+    for (let r = 0; r < part.rayCount; r++) {
+      out.crestOffsets[r0 + r] = c0 + part.crestOffsets[r]!;
+      out.seaOffsets[r0 + r] = s0 + part.seaOffsets[r]!;
+    }
     out.crestAngle.set(part.crestAngle, c0);
     out.crestDist.set(part.crestDist, c0);
     out.crestElev.set(part.crestElev, c0);
+    out.seaLo.set(part.seaLo, s0);
+    out.seaHi.set(part.seaHi, s0);
     r0 += part.rayCount;
     c0 += part.crestAngle.length;
+    s0 += part.seaLo.length;
   }
   out.crestOffsets[rayCount] = c0;
+  out.seaOffsets[rayCount] = s0;
   return out;
 }

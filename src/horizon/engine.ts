@@ -45,6 +45,7 @@ export class HorizonEngine {
   private readonly workers: Worker[] = [];
   private handler: Handler | null = null;
   private nextJob = 1;
+  private active: EngineRun | null = null;
   private readonly snaps = new Map<
     number,
     { resolve: (r: SnapResult) => void; reject: (e: Error) => void }
@@ -95,6 +96,8 @@ export class HorizonEngine {
     onProgress: (p: EngineProgress) => void,
   ): EngineRun {
     const o: HorizonOptions = { ...DEFAULT_HORIZON_OPTIONS, ...options };
+    // One computation at a time: a new one supersedes the previous.
+    this.active?.cancel();
     const job = this.nextJob++;
     const workers = this.pool();
     const rayTotal = rayCountFor(o.azStep);
@@ -118,11 +121,13 @@ export class HorizonEngine {
     const parts: CastResult[] = [];
     let loadMs = 0;
     let finished = false;
+    let handler: Handler | null = null;
 
     const finish = (err: Error | null, value?: { scene: PanoramaScene; stats: EngineStats }) => {
       if (finished) return;
       finished = true;
-      this.handler = null;
+      if (this.handler === handler) this.handler = null;
+      if (this.active === run) this.active = null;
       if (err) settle.reject(err);
       else settle.resolve(value!);
     };
@@ -135,6 +140,7 @@ export class HorizonEngine {
         horizonAngle: cast.horizonAngle,
         horizonDist: cast.horizonDist,
         ridgelines: unpackRidges(ridges),
+        sea: { offsets: cast.seaOffsets, lo: cast.seaLo, hi: cast.seaHi },
       };
       finish(null, {
         scene,
@@ -149,7 +155,7 @@ export class HorizonEngine {
     };
 
     let merged: CastResult | null = null;
-    this.handler = (msg, wi) => {
+    handler = (msg, wi) => {
       if (finished) return;
       // Ignore stale messages from a cancelled job; job -1 is a worker crash.
       if (msg.job !== job && msg.job !== -1) return;
@@ -200,6 +206,8 @@ export class HorizonEngine {
       }
     };
 
+    this.handler = handler;
+
     // Contiguous azimuth sectors, one per worker.
     for (let i = 0; i < n; i++) {
       const rayStart = Math.floor((i * rayTotal) / n);
@@ -214,7 +222,7 @@ export class HorizonEngine {
       });
     }
 
-    return {
+    const run: EngineRun = {
       promise,
       cancel: () => {
         if (finished) return;
@@ -222,5 +230,7 @@ export class HorizonEngine {
         finish(new CancelledComputeError());
       },
     };
+    this.active = run;
+    return run;
   }
 }

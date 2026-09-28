@@ -131,3 +131,35 @@ describe('computeScene', () => {
     expect(scene.horizonAngle.length).toBe(360);
   });
 });
+
+describe('sea intervals', () => {
+  it('marks visible open sea on rays over the ocean only', async () => {
+    const coastLat = OBS.lat - 0.05; // ~5.5 km south of the observer
+    const hill = coneTerrain([{ lat: OBS.lat, lon: OBS.lon, height: 800, radiusM: 3000 }], 100);
+    const terrain = (lat: number, lon: number) => (lat < coastLat ? -150 : hill(lat, lon));
+    const scene = await computeScene(
+      new SyntheticSource(terrain),
+      { ...OBS, groundElev: 900 },
+      {
+        radiusM: 30_000,
+        azStep: 5,
+      },
+    );
+    const seaOf = (az: number) => {
+      const r = az / 5;
+      const out: [number, number][] = [];
+      for (let i = scene.sea.offsets[r]!; i < scene.sea.offsets[r + 1]!; i++) {
+        out.push([scene.sea.lo[i]!, scene.sea.hi[i]!]);
+      }
+      return out;
+    };
+    expect(seaOf(0)).toEqual([]); // north: land only
+    const south = seaOf(180);
+    expect(south.length).toBe(1);
+    const [lo, hi] = south[0]!;
+    expect(lo).toBeLessThan(hi);
+    // The sea surface reaches the radius, so its top is the horizon toward the south.
+    expect(hi).toBeCloseTo(scene.horizonAngle[180 / 5]!, 6);
+    expect(hi).toBeCloseTo(elevationAngleDeg(0, 902, 30_000), 1);
+  });
+});

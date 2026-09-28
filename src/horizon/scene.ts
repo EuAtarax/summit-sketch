@@ -21,6 +21,13 @@ export interface Observer {
   name?: string;
 }
 
+/** Visible open-sea intervals per ray (see CastResult). */
+export interface SeaIntervals {
+  offsets: Uint32Array;
+  lo: Float32Array;
+  hi: Float32Array;
+}
+
 export interface PanoramaScene {
   observer: Observer;
   azStep: number; // degrees between rays
@@ -28,6 +35,7 @@ export interface PanoramaScene {
   horizonAngle: Float32Array; // outermost visible angle per ray
   horizonDist: Float32Array; // distance of that outermost visible crest per ray
   ridgelines: Ridgeline[]; // all visible crests, linked across rays
+  sea: SeaIntervals; // visible open sea per ray
 }
 
 export function unpackRidges(p: PackedRidges): Ridgeline[] {
