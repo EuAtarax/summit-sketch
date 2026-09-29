@@ -80,8 +80,17 @@ export const mistyStyle: PanoramaStyle = {
       ctx.fill();
       // Mist settles below each crest: stacked haze layers that follow the crest shape
       // and reach pure haze MIST_DEG below it.
+      // Skip mist layers that start below this ridge's face (common for far ridges, whose
+      // next crest is close underneath): they would be empty.
+      const pts = run.r.ridge.points;
+      let face = 0;
+      for (let i = run.i0; i <= run.i1; i++) {
+        const b = run.r.below[i]!;
+        face = Math.max(face, b > -90 ? pts[i]!.angle - b : MIST_DEG);
+      }
       ctx.fillStyle = p.haze;
       for (const [offset, alpha] of MIST_STEPS) {
+        if (offset >= face) break;
         ctx.globalAlpha = alpha;
         bandPath(s, run, { faceDeg: MIST_DEG, maxDepthDeg: MIST_DEG, topOffsetDeg: offset });
         ctx.fill();
