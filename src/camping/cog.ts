@@ -145,24 +145,80 @@ export function decodeTile(compressed: Uint8Array, header: CogHeader): Float32Ar
 const HEADER_BYTES = 64 * 1024;
 const MAX_CONCURRENT_TILES = 6;
 const TILE_CACHE_ENTRIES = 96;
+/** Files up to this size are fetched whole in one request instead of block by block. */
+const WHOLE_FILE_MAX_BYTES = 4 * 1024 * 1024;
+/** Requests in flight across all rasters; browsers refuse a flood of parallel requests. */
+const MAX_CONCURRENT_REQUESTS = 6;
+const RETRY_DELAYS_MS = [400, 1200];
 
-async function fetchRange(
+let activeRequests = 0;
+const waiting: (() => void)[] = [];
+
+async function limited<T>(task: () => Promise<T>): Promise<T> {
+  while (activeRequests >= MAX_CONCURRENT_REQUESTS) {
+    await new Promise<void>((resolve) => waiting.push(resolve));
+  }
+  activeRequests++;
+  try {
+    return await task();
+  } finally {
+    activeRequests--;
+    waiting.shift()?.();
+  }
+}
+
+interface Fetched {
+  bytes: Uint8Array;
+  /** Size of the whole file, from Content-Range, when the server said so. */
+  totalBytes: number | null;
+}
+
+/**
+ * One range (or, without `range`, the whole file). A network-level failure (a TypeError from
+ * fetch) is retried twice with a short delay: the tile servers are fast but occasionally drop
+ * a connection.
+ */
+async function fetchBytes(
   fetchFn: FetchFn,
   url: string,
-  start: number,
-  length: number,
-): Promise<Uint8Array> {
-  const res = await fetchFn(url, { headers: { Range: `bytes=${start}-${start + length - 1}` } });
-  if (res.status !== 206 && res.status !== 200) throw new Error(`HTTP ${res.status} for ${url}`);
-  return new Uint8Array(await res.arrayBuffer());
+  range?: { start: number; length: number },
+): Promise<Fetched> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await limited(async () => {
+        const init: RequestInit = range
+          ? { headers: { Range: `bytes=${range.start}-${range.start + range.length - 1}` } }
+          : {};
+        const res = await fetchFn(url, init);
+        if (res.status !== 206 && res.status !== 200)
+          throw new Error(`HTTP ${res.status} for ${url}`);
+        const total = /\/(\d+)$/.exec(res.headers.get('Content-Range') ?? '');
+        return {
+          bytes: new Uint8Array(await res.arrayBuffer()),
+          totalBytes: total
+            ? Number(total[1])
+            : range
+              ? null
+              : Number(res.headers.get('Content-Length')) || null,
+        };
+      });
+    } catch (err) {
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (!(err instanceof TypeError) || delay === undefined) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
 }
 
 /**
  * A remote COG read with HTTP range requests: only the header and the tiles a window touches
- * are downloaded, and decoded tiles are kept in a small in-memory cache.
+ * are downloaded (small files, like the 1.2 MB 2 m terrain tiles, are fetched whole in one
+ * request), and decoded tiles are kept in a small in-memory cache.
  */
 export class CogRaster {
   private headerPromise: Promise<CogHeader> | null = null;
+  private totalBytes: number | null = null;
+  private whole: Promise<Uint8Array> | null = null;
   private readonly tiles = new Map<number, Promise<Float32Array>>();
 
   constructor(
@@ -177,8 +233,13 @@ export class CogRaster {
 
   private async loadHeader(): Promise<CogHeader> {
     for (const size of [HEADER_BYTES, 8 * HEADER_BYTES]) {
+      const { bytes, totalBytes } = await fetchBytes(this.fetchFn, this.url, {
+        start: 0,
+        length: size,
+      });
+      this.totalBytes = totalBytes;
       try {
-        return parseCogHeader(await fetchRange(this.fetchFn, this.url, 0, size));
+        return parseCogHeader(bytes);
       } catch (err) {
         if (!(err instanceof RangeError)) throw err;
       }
@@ -186,15 +247,21 @@ export class CogRaster {
     throw new Error(`TIFF directory of ${this.url} is unexpectedly large`);
   }
 
+  /** The compressed bytes of a tile: sliced from the whole file if it is small, else a range. */
+  private async tileBytes(header: CogHeader, index: number): Promise<Uint8Array> {
+    const start = header.tileOffsets[index]!;
+    const length = header.tileByteCounts[index]!;
+    if (this.totalBytes !== null && this.totalBytes <= WHOLE_FILE_MAX_BYTES) {
+      this.whole ??= fetchBytes(this.fetchFn, this.url).then((f) => f.bytes);
+      return (await this.whole).subarray(start, start + length);
+    }
+    return (await fetchBytes(this.fetchFn, this.url, { start, length })).bytes;
+  }
+
   private tile(header: CogHeader, index: number): Promise<Float32Array> {
     let hit = this.tiles.get(index);
     if (!hit) {
-      hit = fetchRange(
-        this.fetchFn,
-        this.url,
-        header.tileOffsets[index]!,
-        header.tileByteCounts[index]!,
-      ).then((bytes) => decodeTile(bytes, header));
+      hit = this.tileBytes(header, index).then((bytes) => decodeTile(bytes, header));
       this.tiles.set(index, hit);
       while (this.tiles.size > TILE_CACHE_ENTRIES) {
         this.tiles.delete(this.tiles.keys().next().value as number);

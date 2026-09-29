@@ -25,15 +25,24 @@ function makeFile(noData?: number) {
 }
 
 /** A fake server that honors Range requests and records what was asked. */
-function serve(file: Uint8Array) {
+function serve(file: Uint8Array, reportSize = false) {
   const ranges: [number, number][] = [];
+  let wholeFetches = 0;
   const fetchFn: FetchFn = async (_url, init) => {
-    const header = new Headers(init.headers).get('Range')!;
+    const header = new Headers(init.headers).get('Range');
+    if (!header) {
+      wholeFetches++;
+      return new Response(file.slice(), { status: 200 });
+    }
     const [start, end] = header.replace('bytes=', '').split('-').map(Number) as [number, number];
     ranges.push([start, end]);
-    return new Response(file.slice(start, Math.min(end + 1, file.length)), { status: 206 });
+    const last = Math.min(end, file.length - 1);
+    return new Response(file.slice(start, last + 1), {
+      status: 206,
+      headers: reportSize ? { 'Content-Range': `bytes ${start}-${last}/${file.length}` } : {},
+    });
   };
-  return { fetchFn, ranges };
+  return { fetchFn, ranges, wholeFetches: () => wholeFetches };
 }
 
 describe('parseCogHeader', () => {
@@ -100,6 +109,28 @@ describe('CogRaster.readWindow', () => {
     await raster.readWindow(5, 5, 20, 20); // cached
     expect(ranges).toHaveLength(2);
     expect(ranges[0]![0]).toBe(0);
+  });
+
+  it('fetches a small file whole, once, instead of block by block', async () => {
+    const server = serve(makeFile(), true);
+    const raster = new CogRaster('https://example.test/small.tif', server.fetchFn);
+    const a = await raster.readWindow(0, 0, 20, 20);
+    const b = await raster.readWindow(250, 150, 20, 20); // another tile
+    expect(a[0]).toBeCloseTo(elevation(0, 0), 3);
+    expect(b[0]).toBeCloseTo(elevation(250, 150), 3);
+    expect(server.ranges).toHaveLength(1); // only the header range
+    expect(server.wholeFetches()).toBe(1);
+  });
+
+  it('retries a dropped connection', async () => {
+    const server = serve(makeFile());
+    let failures = 1;
+    const flaky: FetchFn = async (url, init) => {
+      if (failures-- > 0) throw new TypeError('Failed to fetch');
+      return server.fetchFn(url, init);
+    };
+    const raster = new CogRaster('https://example.test/flaky.tif', flaky);
+    expect((await raster.readWindow(0, 0, 4, 4))[0]).toBeCloseTo(elevation(0, 0), 3);
   });
 
   it('marks no-data cells and pixels outside the file as NaN', async () => {
