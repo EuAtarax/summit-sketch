@@ -5,46 +5,30 @@ import '@fontsource/atkinson-hyperlegible/700.css';
 import '../ui/search.css';
 import './camping.css';
 import { NominatimClient } from '../search/nominatim';
-import { formatDistance } from '../ui/format';
 import { createSearchBar } from '../ui/searchBar';
 import { reloadWhenUpdated } from '../ui/updates';
-import { patchMinimum, pitchSuitability, shareAbove } from './analysis';
+import { patchMinimum, pitchSuitability } from './analysis';
 import { AnalysisClient, SupersededError } from './analysisClient';
-import { LAYERS, makeColorizer, renderOverlay, windowCorners, type LayerId } from './heatmap';
+import { createBaseMap, OVERLAY_PANE } from './baseMap';
+import { LAYERS, makeColorizer, renderOverlay, type LayerId } from './heatmap';
 import { isInSwitzerland, lv95ToWgs84, wgs84ToLv95 } from './lv95';
 import { DRINKING_LABELS } from './osm';
-import { CREDITS, OVERLAYS, overlayTileUrl } from './overlays';
-import { createPanel, type SpotItem } from './panel';
+import { createPanel } from './panel';
 import type { AnalysisResult, Progress } from './pipeline';
 import { campScore, pickSpots, type Spot } from './scoring';
-import { loadSettings, saveSettings, type CampingSettings } from './settings';
-import { DTM_2M, windowBounds } from './terrain';
+import { loadSettings, saveSettings, withPatch, type CampingSettings } from './settings';
+import { describeSpot, NO_GOOD_SPOTS, protectedLayer, summarize } from './summary';
+import { DTM_2M, windowBounds, windowCorners } from './terrain';
 
 reloadWhenUpdated();
 
-const SWITZERLAND_BOUNDS: L.LatLngBoundsLiteral = [
-  [45.8, 5.95],
-  [47.85, 10.55],
-];
 /** Zoom used when jumping to a place or to the user's location. */
 const SPOT_ZOOM = 15;
 /** Below this zoom a tap zooms in instead of choosing a spot. */
 const MIN_SPOT_ZOOM = 12;
-/** A cell counts as pitchable from this suitability on (for the summary numbers). */
-const PITCHABLE = 0.5;
 const RESCORE_DELAY_MS = 120;
-const NO_GOOD_SPOTS =
-  'No good spot in this box. Try a different place, a larger area, or loosen the pitch settings.';
 const RED = '#C8102E';
 const BLUE = '#1E6EC8';
-
-const SWISSTOPO =
-  '© <a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">swisstopo</a>';
-const BASES = {
-  map: 'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg',
-  aerial:
-    'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg',
-} as const;
 
 // --- state ------------------------------------------------------------------------------
 
@@ -57,7 +41,7 @@ let score: Float32Array | null = null;
 let protectedValues: Float32Array | null = null;
 let spots: Spot[] = [];
 
-// --- map --------------------------------------------------------------------------------
+// --- map and panel ----------------------------------------------------------------------
 
 const app = document.getElementById('app')!;
 const mapEl = document.createElement('div');
@@ -66,55 +50,10 @@ const topBar = document.createElement('div');
 topBar.className = 'map-top';
 app.append(mapEl, topBar);
 
-const map = L.map(mapEl, { zoomControl: false, attributionControl: false });
-L.control.zoom({ position: 'bottomright' }).addTo(map);
-L.control
-  .attribution({ prefix: false, position: 'bottomleft' })
-  .addAttribution(`Terrain: swissALTI3D ${SWISSTOPO}`)
-  .addTo(map);
-map.fitBounds(SWITZERLAND_BOUNDS);
-// Overlays (trails, protected areas, markers) sit above the heatmap so they stay readable.
-map.createPane('overlays').style.zIndex = '450';
-
-let baseLayer: L.TileLayer | null = null;
-function showBase(id: CampingSettings['base']): void {
-  baseLayer?.remove();
-  baseLayer = L.tileLayer(BASES[id], {
-    maxNativeZoom: id === 'aerial' ? 20 : 18,
-    maxZoom: 20,
-    attribution: SWISSTOPO,
-  })
-    .addTo(map)
-    .bringToBack();
-}
-
-const overlayLayers = new Map<string, L.TileLayer>();
-function showOverlays(ids: readonly string[]): void {
-  for (const [id, layer] of overlayLayers) {
-    if (!ids.includes(id)) {
-      layer.remove();
-      overlayLayers.delete(id);
-    }
-  }
-  for (const def of OVERLAYS) {
-    if (!ids.includes(def.id) || overlayLayers.has(def.id)) continue;
-    overlayLayers.set(
-      def.id,
-      L.tileLayer(overlayTileUrl(def.layer), {
-        pane: 'overlays',
-        opacity: 0.75,
-        maxNativeZoom: 18,
-        maxZoom: 20,
-        attribution: CREDITS[def.credit],
-      }).addTo(map),
-    );
-  }
-}
-
-// --- panel ------------------------------------------------------------------------------
+const { map, showBase, showOverlays } = createBaseMap(mapEl);
 
 function update(patch: Partial<CampingSettings>): void {
-  settings = { ...settings, ...patch };
+  settings = withPatch(settings, patch);
   saveSettings(settings);
   panel.syncFrom(settings);
 }
@@ -233,22 +172,13 @@ function startAnalysis(): void {
 
 function onResult(res: AnalysisResult): void {
   result = res;
-  protectedValues = res.protectionIndex ? protectedLayer(res) : null;
+  protectedValues = protectedLayer(res);
   panel.setWarnings(res.warnings);
   panel.setAreas(res.areas);
   showDrinkingSources();
   rescore();
   drawOutline(true);
   if (window.matchMedia('(max-width: 640px)').matches) panel.setOpen(false);
-}
-
-/** 0 = not protected, 1 = protected but not in force today, 2 = in force. */
-function protectedLayer(res: AnalysisResult): Float32Array {
-  const out = new Float32Array(res.protectionIndex!.length);
-  res.protectionIndex!.forEach((area, i) => {
-    out[i] = area === 0 ? 0 : res.areas[area - 1]!.inForce ? 2 : 1;
-  });
-  return out;
 }
 
 // --- scoring, layers, markers ------------------------------------------------------------
@@ -285,60 +215,17 @@ function rescore(): void {
   spots = pickSpots(score, result.geometry);
   renderLayer();
   showSpots();
-  panel.setSpots(spots.map(describeSpot), NO_GOOD_SPOTS);
-  panel.setStatus(summary(result, suitability, score));
-}
-
-/** Hectares of good terrain that a protection in force takes out of the score. */
-function hiddenHectares(res: AnalysisResult, terrain: Float32Array): number {
-  if (!res.protectionIndex || !settings.hideProtected) return 0;
-  let cells = 0;
-  res.protectionIndex.forEach((area, i) => {
-    if (area > 0 && res.areas[area - 1]!.inForce && terrain[i]! >= PITCHABLE) cells++;
-  });
-  return (cells * res.geometry.cell * res.geometry.cell) / 10_000;
-}
-
-function summary(res: AnalysisResult, terrain: Float32Array, s: Float32Array): string {
-  const sizeM = res.geometry.width * res.geometry.cell;
-  const km = (sizeM / 1000).toFixed(1);
-  const good = shareAbove(s, PITCHABLE);
-  const hectares = (good * sizeM * sizeM) / 10_000;
-  const hidden = hiddenHectares(res, terrain);
-  return (
-    `${km} x ${km} km in ${(res.millis / 1000).toFixed(1)} s. ` +
-    `${(good * 100).toFixed(1)} % of the area (${hectares.toFixed(1)} ha) has ground you could pitch on.` +
-    (hidden >= 0.1 ? ` ${hidden.toFixed(1)} ha more is hidden by protected areas.` : '')
+  panel.setSpots(
+    spots.map((s) => describeSpot(result!, s)),
+    NO_GOOD_SPOTS,
   );
+  panel.setStatus(summarize(result, suitability, score, settings.hideProtected));
 }
 
-const meters = (d: number): string =>
-  d < 1000 ? `${Math.round(d / 10) * 10} m` : formatDistance(d);
-
-/** One line for the list: the score and what is around the spot. */
-function describeSpot(s: Spot): SpotItem {
-  const r = result!;
-  const i = s.row * r.geometry.width + s.col;
-  const near = (label: string, distances: Float32Array | undefined): string | null =>
-    distances
-      ? Number.isFinite(distances[i]!)
-        ? `${meters(distances[i]!)} from ${label}`
-        : `no ${label} in this box`
-      : null;
-  const area =
-    r.protectionIndex && r.protectionIndex[i]! > 0 ? r.areas[r.protectionIndex[i]! - 1]! : null;
-  const parts = [
-    `${Math.round(r.slope[i]!)}° slope`,
-    near('a trail', r.trailDistance),
-    near('water', r.waterDistance),
-    near('drinking water', r.drinkingDistance),
-    area ? `in ${area.kind}: ${area.name}${area.inForce ? '' : ' (not in force today)'}` : null,
-  ];
-  return {
-    rank: s.rank,
-    title: `#${s.rank}   score ${Math.round(s.score * 100)} %`,
-    detail: parts.filter(Boolean).join(', '),
-  };
+let rescoreTimer = 0;
+function scheduleRescore(): void {
+  clearTimeout(rescoreTimer);
+  rescoreTimer = window.setTimeout(rescore, RESCORE_DELAY_MS);
 }
 
 function valuesOf(layer: LayerId): Float32Array | undefined {
@@ -387,24 +274,26 @@ function showSpots(): void {
   spotMarkers.clear();
   for (const s of spots) {
     const { lat, lon } = lv95ToWgs84(s.e, s.n);
-    const item = describeSpot(s);
+    const item = describeSpot(result!, s);
     const icon = L.divIcon({
       className: 'spot-marker',
       html: `<span>${s.rank}</span>`,
       iconSize: [28, 28],
     });
-    const m = L.marker([lat, lon], { icon, pane: 'overlays' })
-      .bindPopup(`<strong>${item.title}</strong><br>${item.detail}`)
-      .addTo(spotLayer);
-    spotMarkers.set(s.rank, m);
+    spotMarkers.set(
+      s.rank,
+      L.marker([lat, lon], { icon, pane: OVERLAY_PANE })
+        .bindPopup(`<strong>${item.title}</strong><br>${item.detail}`)
+        .addTo(spotLayer),
+    );
   }
 }
 
 function focusSpot(rank: number): void {
-  const marker = spotMarkers.get(rank);
-  if (!marker) return;
-  map.setView(marker.getLatLng(), Math.max(map.getZoom(), 17));
-  marker.openPopup();
+  const m = spotMarkers.get(rank);
+  if (!m) return;
+  map.setView(m.getLatLng(), Math.max(map.getZoom(), 17));
+  m.openPopup();
 }
 
 const drinkingLayer = L.layerGroup().addTo(map);
@@ -413,7 +302,7 @@ function showDrinkingSources(): void {
   if (!settings.showDrinking || !result) return;
   for (const d of result.drinking) {
     L.circleMarker([d.lat, d.lon], {
-      pane: 'overlays',
+      pane: OVERLAY_PANE,
       radius: 6,
       color: '#FFFFFF',
       weight: 2,
@@ -423,12 +312,6 @@ function showDrinkingSources(): void {
       .bindPopup(`${DRINKING_LABELS[d.kind]}${d.name ? `: ${d.name}` : ''}`)
       .addTo(drinkingLayer);
   }
-}
-
-let rescoreTimer = 0;
-function scheduleRescore(): void {
-  clearTimeout(rescoreTimer);
-  rescoreTimer = window.setTimeout(rescore, RESCORE_DELAY_MS);
 }
 
 // --- location, URL, clicks ---------------------------------------------------------------

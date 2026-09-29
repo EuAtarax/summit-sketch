@@ -16,8 +16,8 @@ export class SupersededError extends Error {
 
 /**
  * Runs analyses in a Web Worker so downloading and number crunching never block the page.
- * Only the latest request matters: starting a new one supersedes the running one, whose
- * result is ignored (its downloads finish in the background and stay cached).
+ * Only the latest request matters: starting a new one supersedes the running one, which is
+ * stopped by ending its worker.
  */
 export class AnalysisClient {
   private worker: Worker | null = null;
@@ -58,7 +58,14 @@ export class AnalysisClient {
   }
 
   run(params: AnalysisParams, onProgress: (p: Progress) => void): Promise<AnalysisResult> {
-    this.current?.reject(new SupersededError());
+    if (this.current) {
+      // The old run is no longer wanted: stop it instead of letting it queue up the new one
+      // behind it (the tiles it already fetched stay in the browser's HTTP cache).
+      this.current.reject(new SupersededError());
+      this.current = null;
+      this.worker?.terminate();
+      this.worker = null;
+    }
     const id = this.nextId++;
     const worker = this.ensureWorker();
     return new Promise((resolve, reject) => {

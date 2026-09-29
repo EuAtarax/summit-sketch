@@ -6,6 +6,7 @@ import {
   sanitizeSettings,
   sanitizeSuitability,
   SUITABILITY_CONTROLS,
+  withPatch,
 } from './settings';
 
 describe('sanitizeSettings', () => {
@@ -78,4 +79,22 @@ describe('SUITABILITY_CONTROLS', () => {
       expect(c.step).toBeGreaterThan(0);
     },
   );
+});
+
+describe('withPatch', () => {
+  it('switches vegetation height off when the area grows beyond what it allows', () => {
+    const small = { ...DEFAULT_SETTINGS, areaKm: 1 as const, canopy: true };
+    expect(withPatch(small, { opacity: 0.5 }).canopy).toBe(true);
+    expect(withPatch(small, { areaKm: 4 }).canopy).toBe(false);
+    // ...and does not turn it back on by itself when the area shrinks again.
+    expect(withPatch(withPatch(small, { areaKm: 4 }), { areaKm: 1 }).canopy).toBe(false);
+  });
+
+  it('refuses to turn vegetation height on for a large area', () => {
+    expect(withPatch({ ...DEFAULT_SETTINGS, areaKm: 2 }, { canopy: true }).canopy).toBe(false);
+  });
+
+  it('applies ordinary changes unchanged', () => {
+    expect(withPatch(DEFAULT_SETTINGS, { palette: 'magma' }).palette).toBe('magma');
+  });
 });

@@ -1,6 +1,6 @@
-import { lv95ToWgs84, wgs84ToLv95 } from './lv95';
+import { wgs84ToLv95 } from './lv95';
 import { paletteColor, type PaletteId } from './palettes';
-import type { GridGeometry } from './terrain';
+import { windowCorners, type GridGeometry } from './terrain';
 
 export type Rgba = readonly [number, number, number, number];
 
@@ -87,21 +87,6 @@ export function makeColorizer(layer: LayerId, palette: PaletteId): (value: numbe
     const [r, gr, b] = paletteColor(palette, g);
     return [r, gr, b, def.alpha(g, value)];
   };
-}
-
-/** The four corners of a window (north-west first, clockwise) as [lat, lon] pairs. */
-export function windowCorners(geometry: GridGeometry): [number, number][] {
-  const w = geometry.width * geometry.cell;
-  const h = geometry.height * geometry.cell;
-  return [
-    [geometry.e0, geometry.n0],
-    [geometry.e0 + w, geometry.n0],
-    [geometry.e0 + w, geometry.n0 - h],
-    [geometry.e0, geometry.n0 - h],
-  ].map(([e, n]) => {
-    const p = lv95ToWgs84(e!, n!);
-    return [p.lat, p.lon] as [number, number];
-  });
 }
 
 export interface Overlay {

@@ -186,8 +186,17 @@ Find suitable places to camp in the wild: flat enough for a small 2-person tent,
 - On phones the panel folds away after an analysis and a chip at the bottom keeps the result and the legend in sight.
 - Note: the overlays are visual map layers. Flagging each candidate spot by its protected areas (S4, through `identify`) is still to do; the layer for Swiss trail closures does not exist in the WMTS list, so it is not offered.
 
-- [ ] S3: trails, water and drinking water from OSM, with the trail-distance and water-distance rasters.
-- [ ] S4: protected-area flags from the BAFU layers with season awareness.
+**Results of S3 and S4:**
+- **One Overpass query per box** (trails, streams and lake outlines, drinking-water sources with their geometry), cached in IndexedDB for a week by a box rounded to 0.005 degrees. Busy servers are retried with backoff; a browser hides Overpass's 429/504 behind a network error, which is retried too. The endpoint is configurable (`VITE_OVERPASS_URL`), which is also where a mirror would go. From the development sandbox the Overpass hosts were unreachable (the proxy refuses the tunnel), so the OSM path was verified against a local fake server and unit tests; the real server is unverified from here.
+- **Exact distances:** trails, water and drinking water are rasterized onto the 2 m grid and turned into distance maps with an exact Euclidean distance transform (tested against brute force).
+- **Camp score** = terrain suitability x nearness to a trail (fading to a floor of 0.15 beyond twice the distance; ground within 8 m of a path is cut, since that is the path itself) x nearness to water (floor 0.5) x nearness to drinking water (floor 0.6). Each preference has a switch and a distance. An unreachable service never penalizes: unknown is not far. Drinking sources are markers (springs are worded "verify and treat").
+- **Protected areas (S4):** one `identify` request for eight federal layers (wildlife quiet zones, game reserves, parks including the Swiss National Park, bird reserves, floodplains, moorland, bogs, fens) returns polygons; they are rasterized onto the grid. Each area knows its protection period; a winter refuge is "not in force" in summer, so it is shown but hides nothing, while areas in force cut the camp score (toggle, on by default). The panel lists the areas in the box with their rule (as published, German) and season. The National Park has no queryable layer of its own, but the parks layer contains it (category SNP).
+- **Ranked spots (part of S5):** the best cell of each 10 m block, best first, at least 150 m apart, shown as numbered markers and a list with slope, distances and the protected area each lies in.
+- **Failure handling:** if OpenStreetMap or the protection service fails, the terrain result still arrives, with a plain-language warning; nothing else changes.
+- **Still to do:** presets (sheltered, sunrise view), sunrise and sunset visibility per spot, calibration of the thresholds on real bivouac spots, cantonal rules (only federal inventories are flagged), and memory on phones at 4 x 4 km (about 130 MB of grids).
+
+- [x] S3: trails, water and drinking water from OSM, with the trail-distance and water-distance rasters.
+- [x] S4: protected-area flags from the BAFU layers with season awareness.
 - [ ] S5: scoring, presets, heatmap and ranked spots; inspect the top spots on aerial imagery and against known camping and bivouac places in the area.
 - [ ] S6: a GPX corridor over the same area.
 - [ ] **Deliverable:** a short write-up in `docs/` with the measurements, the chosen approach or a no-go, phases with acceptance criteria, and open legal wording.

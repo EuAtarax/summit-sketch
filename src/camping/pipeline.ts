@@ -2,11 +2,18 @@ import { createIdbCache, type Cache } from '../cache/idbCache';
 import type { BBox } from '../peaks/overpass';
 import { downsampleMean, flatSurfaceMask, objectHeight, roughness, slopeDegrees } from './analysis';
 import type { FetchFn } from './cog';
-import { lv95ToWgs84, wgs84ToLv95 } from './lv95';
+import { wgs84ToLv95 } from './lv95';
 import { fetchFeatures, type DrinkingSource, type LatLon, type OsmFeatures } from './osm';
 import { fetchProtectedAreas, protectionIndex, type ProtectedArea } from './protection';
 import { distanceTransform, rasterizeLines, rasterizePoints, type Point } from './raster';
-import { DSM_05M, DTM_2M, loadWindow, windowBounds, type GridGeometry } from './terrain';
+import {
+  DSM_05M,
+  DTM_2M,
+  loadWindow,
+  wgs84Envelope,
+  windowBounds,
+  type GridGeometry,
+} from './terrain';
 
 export interface AnalysisParams {
   /** Center of the area in LV95, meters. */
@@ -87,10 +94,8 @@ function defaultOsmCache(): Cache<OsmFeatures> | undefined {
 
 /** WGS84 box around a window, with a margin so features just outside still count. */
 function wgs84Box(g: GridGeometry): BBox {
-  const size = g.width * g.cell;
-  const sw = lv95ToWgs84(g.e0 - BOX_MARGIN_M, g.n0 - size - BOX_MARGIN_M);
-  const ne = lv95ToWgs84(g.e0 + size + BOX_MARGIN_M, g.n0 + BOX_MARGIN_M);
-  return { south: sw.lat, west: sw.lon, north: ne.lat, east: ne.lon };
+  const [west, south, east, north] = wgs84Envelope(g, BOX_MARGIN_M);
+  return { south, west, north, east };
 }
 
 const toLv95 = (p: LatLon): Point => {

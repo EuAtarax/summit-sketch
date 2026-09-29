@@ -36,6 +36,8 @@ Keep dependencies minimal. Ask before adding any dependency larger than ~50 kB g
 | Place search | Nominatim | Max 1 request/s. Search on submit only, never on each keystroke. |
 | Map picker tiles | OpenStreetMap standard tiles, OpenTopoMap (terrain), EOX Sentinel-2 cloudless (satellite) | Light use with attribution is fine. Providers live in `ui/mapConfig.ts`. EOX is CC BY-NC-SA 4.0: the app must stay non-commercial. |
 | Swiss terrain and maps (camping finder, Switzerland only) | swisstopo: swissALTI3D and swissSURFACE3D Cloud-Optimized GeoTIFFs via the STAC API (`data.geo.admin.ch`), WMTS tiles (`wmts.geo.admin.ch`), BAFU layers via `api3.geo.admin.ch` | Open Government Data: free including commercial use, source "© swisstopo" required. All CORS-open. Read with range requests or whole small files, in LV95 (`camping/lv95.ts`). |
+| Trails, water, drinking water (camping finder) | OSM via Overpass, one query per analysis box | `way[highway=path|footway|track...]`, `waterway`, `natural=water`, `amenity=drinking_water`, `natural=spring`. Cached a week in IndexedDB; same retry rules as the peaks. Endpoint configurable with `VITE_OVERPASS_URL`. |
+| Protected areas (camping finder) | BAFU layers via `api3.geo.admin.ch` identify | Eight federal inventories as polygons, with protection periods. Federal law only; cantonal and local rules are not covered, so the UI must never say a spot is allowed. |
 
 Attribution line (app footer and exports): "Elevation: Terrain Tiles (Mapzen/AWS, see sources) · Map data © OpenStreetMap contributors".
 
@@ -51,7 +53,9 @@ src/
   ui/         map picker, summit sheet, panorama viewer, style picker, export
   search/     Nominatim client (submit-only, throttled)
   camping/    Switzerland camping finder: COG reader, LV95, slope/roughness/vegetation analysis,
-              suitability model, heatmap, overlays, settings, analysis worker, page (main.ts)
+              suitability and camp score, OSM features, protected areas, distance rasters, heatmap,
+              settings, panel, analysis worker, page (main.ts)
+  cache/      small IndexedDB cache used by peaks and the camping finder
 ```
 
 Pages: `index.html` (camping finder, landing), `panorama.html` (panorama app), `spike.html` (data spike, not in the offline cache), `camping.html` (redirects to the landing page).

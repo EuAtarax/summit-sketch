@@ -219,6 +219,18 @@ export function sanitizeSettings(raw: unknown): CampingSettings {
   };
 }
 
+/**
+ * Applies a change and keeps the settings consistent: vegetation height is only allowed for
+ * small areas (it is 17 MB per km2), so growing the area switches it off.
+ */
+export function withPatch(
+  current: CampingSettings,
+  patch: Partial<CampingSettings>,
+): CampingSettings {
+  const next = { ...current, ...patch };
+  return next.areaKm > MAX_CANOPY_AREA_KM ? { ...next, canopy: false } : next;
+}
+
 const STORAGE_KEY = 'summit-sketch:camping';
 
 export function loadSettings(): CampingSettings {

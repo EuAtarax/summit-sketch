@@ -5,6 +5,7 @@ import { OVERLAYS } from './overlays';
 import { PALETTES, paletteGradientCss, type PaletteId } from './palettes';
 import type { AreaInfo } from './pipeline';
 import type { NearbyParams } from './scoring';
+import type { SpotItem } from './summary';
 import {
   AREA_SIZES_KM,
   DEFAULT_SETTINGS,
@@ -30,13 +31,6 @@ export interface PanelHandlers {
   onModelChange(patch: ModelPatch): void;
   onSpotSelect(rank: number): void;
   onLocate(): void;
-}
-
-/** One line of the list of best spots. */
-export interface SpotItem {
-  rank: number;
-  title: string;
-  detail: string;
 }
 
 export interface Panel {

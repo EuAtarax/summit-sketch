@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAYERS, makeColorizer, windowCorners, type LayerId } from './heatmap';
+import { LAYERS, makeColorizer, type LayerId } from './heatmap';
 import { paletteColor } from './palettes';
 
 const layers = Object.keys(LAYERS) as LayerId[];
@@ -58,22 +58,5 @@ describe('special layers', () => {
     const score = makeColorizer('score', 'viridis');
     const terrain = makeColorizer('suitability', 'viridis');
     expect(score(0.8)).toEqual(terrain(0.8));
-  });
-});
-
-describe('windowCorners', () => {
-  it('returns the corners of the window around the right place, about its size apart', () => {
-    // 1 km window at the Glarus Sud test tile.
-    const c = windowCorners({ e0: 2722000, n0: 1205000, cell: 2, width: 500, height: 500 });
-    expect(c).toHaveLength(4);
-    const dLat = Math.abs(c[0]![0] - c[3]![0]) * 111_200;
-    expect(dLat).toBeGreaterThan(950);
-    expect(dLat).toBeLessThan(1050);
-    for (const [lat, lon] of c) {
-      expect(lat).toBeGreaterThan(46.97);
-      expect(lat).toBeLessThan(47.01);
-      expect(lon).toBeGreaterThan(9.03);
-      expect(lon).toBeLessThan(9.09);
-    }
   });
 });
