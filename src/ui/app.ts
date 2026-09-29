@@ -21,6 +21,8 @@ const PEAK_ZOOM = 11;
 const PEAK_TAP_PX = 32;
 /** OSM `ele` is ignored if it disagrees with the DEM by more than this (tagging errors). */
 const MAX_ELE_DEM_DIFF_M = 400;
+/** Longest a tap waits for peak names before using the exact point. */
+const PEAK_TAP_TIMEOUT_MS = 6000;
 const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
 const ELEVATION_ERROR = "Couldn't load elevation data. Check your connection and try again.";
 
@@ -124,7 +126,16 @@ export function mountApp(root: HTMLElement): void {
 
     let peak: Peak | null = null;
     try {
-      if (radiusM > 0) peak = nearestPeak(await peaks.ensure(around), lat, lon, radiusM);
+      if (radiusM > 0) {
+        // Don't keep a tap waiting on a slow public server: fall back to the exact point.
+        const list = await Promise.race([
+          peaks.ensure(around),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Peak lookup timed out')), PEAK_TAP_TIMEOUT_MS),
+          ),
+        ]);
+        peak = nearestPeak(list, lat, lon, radiusM);
+      }
     } catch (err) {
       console.warn('Peak lookup failed, using the tapped point', err);
     }

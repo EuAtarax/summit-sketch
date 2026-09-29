@@ -100,6 +100,16 @@ describe('PeakStore', () => {
     await expect(store.ensure(box)).rejects.toThrow('Overpass HTTP 429');
   });
 
+  it('gives up on a server that never answers', async () => {
+    // Honors the abort signal like fetch does.
+    const hang: FetchFn = (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+      });
+    const store = new PeakStore(hang, [], 20);
+    await expect(store.ensure(box)).rejects.toThrow();
+  });
+
   it('never runs two requests at once', async () => {
     let active = 0;
     let maxActive = 0;

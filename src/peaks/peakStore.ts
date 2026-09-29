@@ -41,6 +41,8 @@ export class PeakStore {
   constructor(
     private readonly fetchFn: FetchFn = (url, init) => fetch(url, init),
     private readonly backoffMs = [2000, 5000, 10000],
+    /** A hanging server must not block a tap forever. */
+    private readonly timeoutMs = 8000,
   ) {}
 
   /** Peaks already cached for the box (no network). */
@@ -83,6 +85,7 @@ export class PeakStore {
       const res = await this.fetchFn(OVERPASS_URL, {
         method: 'POST',
         body: new URLSearchParams({ data: peakQuery(b) }),
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
       if (res.ok) return parsePeaks(await res.json());
       const busy = res.status === 429 || res.status === 504 || res.status === 503;
