@@ -1,6 +1,6 @@
 import type { PackedRidges } from './link';
 import { DEFAULT_HORIZON_OPTIONS, rayCountFor, type HorizonOptions } from './pipeline';
-import type { FromWorker, ToWorker } from './protocol';
+import type { ElevationQuery, FromWorker, ToWorker } from './protocol';
 import { mergeCastResults, type CastResult } from './rayCast';
 import { unpackRidges, type Observer, type PanoramaScene } from './scene';
 import type { SnapResult } from '../terrain/snap';
@@ -50,6 +50,10 @@ export class HorizonEngine {
     number,
     { resolve: (r: SnapResult) => void; reject: (e: Error) => void }
   >();
+  private readonly batches = new Map<
+    number,
+    { resolve: (r: Float32Array) => void; reject: (e: Error) => void }
+  >();
 
   constructor(private readonly size = defaultWorkerCount()) {}
 
@@ -59,6 +63,13 @@ export class HorizonEngine {
       const w = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
       w.onmessage = (e: MessageEvent<FromWorker>) => {
         const msg = e.data;
+        const batch = this.batches.get(msg.job);
+        if (batch) {
+          this.batches.delete(msg.job);
+          if (msg.type === 'elevations-done') batch.resolve(msg.elevations);
+          else if (msg.type === 'error') batch.reject(new Error(msg.message));
+          return;
+        }
         const snap = this.snaps.get(msg.job);
         if (snap) {
           this.snaps.delete(msg.job);
@@ -70,8 +81,11 @@ export class HorizonEngine {
       };
       w.onerror = (e) => {
         e.preventDefault();
-        for (const s of this.snaps.values()) s.reject(new Error(e.message));
+        for (const s of [...this.snaps.values(), ...this.batches.values()]) {
+          s.reject(new Error(e.message));
+        }
         this.snaps.clear();
+        this.batches.clear();
         this.handler?.({ type: 'error', job: -1, message: e.message, cancelled: false }, index);
       };
       this.workers.push(w);
@@ -82,6 +96,20 @@ export class HorizonEngine {
   /** DEM elevation at exactly this point, decoded off the main thread. */
   elevation(lat: number, lon: number): Promise<SnapResult> {
     return this.snap(lat, lon, 0);
+  }
+
+  /**
+   * Summit elevations (highest DEM cell within ~100 m) for many points at once, decoded off
+   * the main thread. NaN marks a point whose tiles had no data.
+   */
+  elevations(points: ElevationQuery[]): Promise<Float32Array> {
+    const job = this.nextJob++;
+    const worker = this.pool()[0]!;
+    return new Promise((resolve, reject) => {
+      this.batches.set(job, { resolve, reject });
+      const msg: ToWorker = { type: 'elevations', job, points };
+      worker.postMessage(msg);
+    });
   }
 
   /**

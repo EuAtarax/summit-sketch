@@ -1,9 +1,10 @@
 /// <reference lib="webworker" />
+import { lonLatToTile } from '../geo/tiles';
 import { elevationAt, snapToSummit } from '../terrain/snap';
 import { TerrariumSource } from '../terrain/terrariumSource';
 import { linkRidges } from './link';
 import { CancelledError, castSector } from './pipeline';
-import type { FromWorker, ToWorker } from './protocol';
+import type { ElevationQuery, FromWorker, ToWorker } from './protocol';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -11,6 +12,35 @@ declare const self: DedicatedWorkerGlobalScope;
 const source = new TerrariumSource({ cacheTiles: 160 });
 const running = new Set<number>();
 const cancelled = new Set<number>();
+
+/** DEMs blunt summits, so look for the highest cell this close to the point. */
+const PEAK_SNAP_RADIUS_M = 100;
+const ELEVATION_CONCURRENCY = 8;
+
+/**
+ * Summit elevations for many points. Points are visited in tile order so consecutive
+ * lookups reuse the same cached tiles instead of thrashing the small tile cache.
+ */
+async function summitElevations(points: ElevationQuery[]): Promise<Float32Array> {
+  const tileKey = (p: ElevationQuery) => {
+    const t = lonLatToTile(p.lat, p.lon, p.zoom);
+    return [p.zoom, Math.floor(t.y / 2), Math.floor(t.x / 2)];
+  };
+  const order = points
+    .map((p, i) => ({ i, key: tileKey(p) }))
+    .sort((a, b) => a.key[0]! - b.key[0]! || a.key[1]! - b.key[1]! || a.key[2]! - b.key[2]!);
+  const out = new Float32Array(points.length).fill(Number.NaN);
+  let next = 0;
+  const lane = async () => {
+    while (next < order.length) {
+      const { i } = order[next++]!;
+      const p = points[i]!;
+      out[i] = (await snapToSummit(source, p.lat, p.lon, PEAK_SNAP_RADIUS_M, p.zoom)).elev;
+    }
+  };
+  await Promise.all(Array.from({ length: ELEVATION_CONCURRENCY }, lane));
+  return out;
+}
 
 function post(msg: FromWorker, transfer: Transferable[] = []): void {
   self.postMessage(msg, transfer);
@@ -65,6 +95,9 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
           ? await snapToSummit(source, msg.lat, msg.lon, msg.radiusM)
           : await elevationAt(source, msg.lat, msg.lon);
       post({ type: 'snap-done', job, result });
+    } else if (msg.type === 'elevations') {
+      const elevations = await summitElevations(msg.points);
+      post({ type: 'elevations-done', job, elevations }, [elevations.buffer]);
     } else {
       const ridges = linkRidges(msg.table, msg.options);
       post({ type: 'link-done', job, ridges }, [

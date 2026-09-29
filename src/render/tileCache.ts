@@ -1,4 +1,6 @@
 import type { PanoramaScene } from '../horizon/scene';
+import { layoutLabels, type LabelCandidate } from './labelLayout';
+import { labelFont, labelMetrics, labelText, type LabeledPeak } from './labels';
 import { optionsKey, type PanoramaStyle, type RenderOptions } from './style';
 import { TILE_PX, type Level, type TileRef } from './tiles';
 import { createViewTransform } from './viewTransform';
@@ -8,10 +10,12 @@ export interface Variant {
   style: PanoramaStyle;
   opts: RenderOptions;
   exaggeration: number;
+  /** Peaks to label, in priority order; null or absent for no labels. */
+  labelPeaks?: readonly LabelCandidate[] | null;
 }
 
 export function variantKey(v: Variant): string {
-  return `${optionsKey(v.style, v.opts)}|${v.exaggeration.toFixed(3)}`;
+  return `${optionsKey(v.style, v.opts)}|${v.exaggeration.toFixed(3)}${v.labelPeaks ? '|L' : ''}`;
 }
 
 /**
@@ -22,6 +26,9 @@ export function variantKey(v: Variant): string {
 export class TileCache {
   private readonly tiles = new Map<string, HTMLCanvasElement>();
   private queue = new Map<string, { variant: Variant; level: Level; kx: number; ky: number }>();
+  /** Label layouts per candidate list, style, level and exaggeration (shared by all tiles). */
+  private readonly layouts = new WeakMap<readonly LabelCandidate[], Map<string, LabeledPeak[]>>();
+  private measureCtx: CanvasRenderingContext2D | null = null;
   /** Tiles rendered so far (for tests and diagnostics). */
   rendered = 0;
 
@@ -114,7 +121,44 @@ export class TileCache {
       angleAtTop: this.content.top - (ky * TILE_PX) / (level.ppd * e),
       exaggeration: e,
     });
-    variant.style.render(ctx, this.scene, view, variant.opts);
+    const opts = variant.labelPeaks
+      ? { ...variant.opts, labels: this.labelsFor(variant, variant.labelPeaks, level) }
+      : variant.opts;
+    variant.style.render(ctx, this.scene, view, opts);
     return canvas;
+  }
+
+  /**
+   * Labels are placed once per (style, level, exaggeration) in absolute az/angle space, so
+   * every tile draws the same layout and labels line up across tile edges and the seam.
+   */
+  private labelsFor(
+    variant: Variant,
+    peaks: readonly LabelCandidate[],
+    level: Level,
+  ): LabeledPeak[] {
+    const key = `${variant.style.id}|${level.index}|${variant.exaggeration.toFixed(3)}`;
+    let perKey = this.layouts.get(peaks);
+    if (!perKey) this.layouts.set(peaks, (perKey = new Map()));
+    const hit = perKey.get(key);
+    if (hit) return hit;
+
+    const style = variant.style.labelStyle;
+    this.measureCtx ??= document.createElement('canvas').getContext('2d');
+    const measure = this.measureCtx;
+    if (measure) measure.font = labelFont(style);
+    const layout = layoutLabels(
+      peaks,
+      {
+        pxPerDeg: level.ppd / this.dpr,
+        exaggeration: variant.exaggeration,
+        angleTop: this.content.top,
+      },
+      (name) =>
+        measure?.measureText(labelText(style, name)).width ?? name.length * style.fontPx * 0.45,
+      labelMetrics(style),
+    );
+    perKey.set(key, layout);
+    return layout;
   }
 }

@@ -1,4 +1,5 @@
 import type { PanoramaScene } from '../horizon/scene';
+import type { LabelCandidate } from '../render/labelLayout';
 import type { PanoramaStyle, RenderOptions } from '../render/style';
 import { TileCache, variantKey, type Variant } from '../render/tileCache';
 import {
@@ -15,6 +16,11 @@ export interface PanoramaCanvas {
   lookAt(az: number, angle?: number, fovDeg?: number): void;
   /** Switches style/options/exaggeration; tiles already rendered for it are reused. */
   setVariant(style: PanoramaStyle, opts: RenderOptions, exaggeration: number | 'auto'): void;
+  /**
+   * Shows peak labels (in priority order) or, with null, hides them. Labels need sky above
+   * the summits, so this changes the drawn area and re-frames the horizon.
+   */
+  setLabels(peaks: readonly LabelCandidate[] | null): void;
   /** Current view center azimuth and horizontal field of view. */
   readonly heading: { az: number; fov: number };
   /** The exaggeration 'auto' resolves to for this scene and screen. */
@@ -30,6 +36,10 @@ const DEFAULT_FOV_DEG = 60;
 const MAX_FOV_DEG = 180;
 const MAX_PX_PER_DEG = 80;
 const COMPASS_PX = 28;
+/** Sky added above the highest crest while labels are shown: about five label rows. */
+const LABEL_BAND_PX = 120;
+const LABEL_BAND_MIN_DEG = 2;
+const LABEL_BAND_MAX_DEG = 12;
 const MAX_DPR = 3;
 const MAX_CANVAS_PX = 9_000_000;
 const CARDINALS: Record<number, string> = {
@@ -71,7 +81,7 @@ export function mountPanoramaCanvas(
   host.append(canvas, controls);
 
   const ctx = canvas.getContext('2d')!;
-  const content = sceneAngleRange(scene);
+  let content = sceneAngleRange(scene);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   // Cap the canvas at ~9 M device pixels: on very large displays full resolution needs
   // hundreds of tiles per frame. Phones keep their full density.
@@ -80,8 +90,10 @@ export function mountPanoramaCanvas(
     MAX_DPR,
     Math.sqrt(MAX_CANVAS_PX / Math.max(1, innerWidth * innerHeight)),
   );
-  const cache = new TileCache(scene, content, dpr);
+  let cache = new TileCache(scene, content, dpr);
   let requested = initial;
+  let labelPeaks: readonly LabelCandidate[] | null = null;
+  let labelBandDeg = 0;
   let variant: Variant = { style: initial.style, opts: initial.opts, exaggeration: 1 };
 
   let w = 0; // CSS px
@@ -123,7 +135,11 @@ export function mountPanoramaCanvas(
     az = 0;
     autoE = autoExaggeration(scene, ppd, h - COMPASS_PX);
     applyVariant();
-    // Frame the horizon: sky just above the highest horizon point in view.
+    frameHorizon();
+  }
+
+  /** Puts the highest horizon point in view near the top, with room for labels if shown. */
+  function frameHorizon() {
     let maxH = -90;
     const n = scene.horizonAngle.length;
     const half = w / 2 / ppd;
@@ -132,7 +148,7 @@ export function mountPanoramaCanvas(
       if (a > maxH) maxH = a;
     }
     const halfH = (h - COMPASS_PX) / 2 / ppy();
-    angle = Math.min(content.top, maxH + 3) - halfH;
+    angle = Math.min(content.top, maxH + 3 + labelBandDeg) - halfH;
     clampView();
   }
 
@@ -164,7 +180,7 @@ export function mountPanoramaCanvas(
 
   function applyVariant() {
     const e = requested.exaggeration === 'auto' ? autoE : requested.exaggeration;
-    variant = { style: requested.style, opts: requested.opts, exaggeration: e };
+    variant = { style: requested.style, opts: requested.opts, exaggeration: e, labelPeaks };
   }
 
   function drawLevel(
@@ -462,6 +478,25 @@ export function mountPanoramaCanvas(
       applyVariant();
       // Keep the same angle at the center when the vertical scale changes.
       if (variant.exaggeration !== before) clampView();
+      requestDraw();
+    },
+    setLabels(peaks) {
+      labelPeaks = peaks && peaks.length ? peaks : null;
+      // Sized in pixels at the current zoom, so it is neither cramped nor mostly empty sky.
+      const pxPerDegY = initialized ? ppy() : 0;
+      labelBandDeg = !labelPeaks
+        ? 0
+        : pxPerDegY > 0
+          ? Math.min(LABEL_BAND_MAX_DEG, Math.max(LABEL_BAND_MIN_DEG, LABEL_BAND_PX / pxPerDegY))
+          : LABEL_BAND_MAX_DEG / 2;
+      content = sceneAngleRange(scene, labelBandDeg);
+      // Tile rows are counted from the content top, so tiles of the old extent are useless.
+      cache = new TileCache(scene, content, dpr);
+      lastComplete = null;
+      switchStart = 0;
+      if (!initialized) return;
+      applyVariant();
+      frameHorizon();
       requestDraw();
     },
     lookAt(toAz, toAngle, fovDeg) {

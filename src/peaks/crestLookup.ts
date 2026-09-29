@@ -12,25 +12,60 @@ export function rayOf(az: number, azStep: number, rayCount: number): number {
   return ((Math.round(az / azStep) % rayCount) + rayCount) % rayCount;
 }
 
+/** Yield to the event loop after this many milliseconds of synchronous work. */
+const CHUNK_MS = 10;
+
+/**
+ * Builds the lookup in small steps: it yields between chunks so an async driver can give
+ * the main thread back, and a sync driver simply runs it to the end.
+ */
+function* buildLookup(scene: PanoramaScene): Generator<void, CrestLookup> {
+  const rayCount = scene.horizonAngle.length;
+  const entries: [number, number][][] = Array.from({ length: rayCount }, () => []);
+  let count = 0;
+  for (const ridge of scene.ridgelines) {
+    for (const p of ridge.points) {
+      entries[rayOf(p.az, scene.azStep, rayCount)]!.push([p.dist, p.angle]);
+      if (++count % 4096 === 0) yield;
+    }
+  }
+  const lookup: CrestLookup = { dist: [], angle: [] };
+  for (const [ray, list] of entries.entries()) {
+    list.sort((a, b) => a[0] - b[0]);
+    lookup.dist.push(list.map((e) => e[0]));
+    lookup.angle.push(list.map((e) => e[1]));
+    if (ray % 64 === 63) yield;
+  }
+  return lookup;
+}
+
 /** Groups the scene's ridge points by ray and sorts each ray by distance. Cached per scene. */
 export function crestLookup(scene: PanoramaScene): CrestLookup {
   const hit = lookups.get(scene);
   if (hit) return hit;
-  const rayCount = scene.horizonAngle.length;
-  const entries: [number, number][][] = Array.from({ length: rayCount }, () => []);
-  for (const ridge of scene.ridgelines) {
-    for (const p of ridge.points) {
-      entries[rayOf(p.az, scene.azStep, rayCount)]!.push([p.dist, p.angle]);
+  const steps = buildLookup(scene);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  lookups.set(scene, step.value);
+  return step.value;
+}
+
+/** Builds the cached lookup without blocking the main thread for more than ~10 ms at a time. */
+export async function prepareCrestLookup(scene: PanoramaScene): Promise<void> {
+  if (lookups.has(scene)) return;
+  const steps = buildLookup(scene);
+  let chunkStart = performance.now();
+  for (;;) {
+    const step = steps.next();
+    if (step.done) {
+      lookups.set(scene, step.value);
+      return;
+    }
+    if (performance.now() - chunkStart > CHUNK_MS) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      chunkStart = performance.now();
     }
   }
-  const lookup: CrestLookup = { dist: [], angle: [] };
-  for (const list of entries) {
-    list.sort((a, b) => a[0] - b[0]);
-    lookup.dist.push(list.map((e) => e[0]));
-    lookup.angle.push(list.map((e) => e[1]));
-  }
-  lookups.set(scene, lookup);
-  return lookup;
 }
 
 /**

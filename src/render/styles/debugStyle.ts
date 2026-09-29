@@ -1,5 +1,6 @@
 import type { PanoramaScene, Ridgeline } from '../../horizon/scene';
 import { rayEnvelope, raysPerVertex } from '../envelope';
+import { drawPeakLabels, LABEL_FONT_FAMILY, type LabelStyle } from '../labels';
 import type { PanoramaStyle } from '../style';
 import { gridStep, wrap180 } from '../viewTransform';
 
@@ -8,6 +9,17 @@ const SEA = '#9FC3D6';
 const HORIZON = '#C8102E';
 const NEAR = [31, 42, 51] as const; // slate ink
 const FAR = [168, 196, 207] as const; // pale glacier
+
+const LABEL_STYLE: LabelStyle = {
+  fontFamily: LABEL_FONT_FAMILY,
+  fontWeight: 600,
+  fontPx: 14,
+  color: '#1F2A33',
+  halo: PAPER,
+  chip: null,
+  leader: { color: HORIZON, width: 1, dash: [3, 2] },
+  uppercase: false,
+};
 
 /** Ridgelines far to near, computed once per scene. */
 const sortedRidges = new WeakMap<PanoramaScene, Ridgeline[]>();
@@ -38,7 +50,8 @@ export const debugStyle: PanoramaStyle = {
   paper: () => PAPER,
   ground: () => PAPER,
   uses: [],
-  render(ctx, scene, v) {
+  labelStyle: LABEL_STYLE,
+  render(ctx, scene, v, opts) {
     const { width, height, pxPerDeg: ppd } = v;
     const ppy = ppd * v.exaggeration;
     const angleBottom = v.angleAtTop - height / ppy;
@@ -136,5 +149,6 @@ export const debugStyle: PanoramaStyle = {
       });
     }
     ctx.stroke();
+    drawPeakLabels(ctx, v, opts.labels, LABEL_STYLE);
   },
 };

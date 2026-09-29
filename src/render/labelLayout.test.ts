@@ -79,7 +79,7 @@ describe('layoutLabels', () => {
 
   it('gives higher-priority labels the best spot', () => {
     const labels = layoutLabels(
-      [peak(9, 100, 5, 'Important'), peak(8, 100, 5, 'Minor')],
+      [peak(9, 100, 5, 'Alpha'), peak(8, 100, 5, 'Bravo')],
       FRAME,
       width,
       METRICS,

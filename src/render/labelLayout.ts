@@ -123,12 +123,22 @@ function collides(c: Placed, placed: readonly Placed[], period: number, spacing:
   });
 }
 
-/** Sideways box offsets tried per row, as fractions of the label width (0 = straight up). */
+/** Sideways box offsets tried, as fractions of the label width (0 = straight up). */
 const SHIFTS = [0, 0.6, -0.6, 1.1, -1.1, 1.7, -1.7];
+/** One row of height costs as much as this much sideways shift (in label widths) times 1/this. */
+const SHIFT_COST = 1.5;
+
+/** Largest sideways run of a flat leader, in label widths. */
+const MAX_FLAT_JOG = 1.2;
+
+/** Spots to try, cheapest first: fewer rows up and less sideways shift are both better. */
+const SPOTS = SHIFTS.flatMap((shift) =>
+  Array.from({ length: MAX_ROWS }, (_, row) => ({ row, shift })),
+).sort((a, b) => a.row + SHIFT_COST * Math.abs(a.shift) - (b.row + SHIFT_COST * Math.abs(b.shift)));
 
 /**
  * Greedy label placement in priority order. Each label is tried in stacked rows above its
- * summit, nearest row first, and within a row straight above first, then shifted sideways
+ * summit, nearest row and straightest leader first, then higher rows or sideways shifts
  * with a slanted leader. The first spot where neither the box nor its leader touches an
  * already placed label or leader wins. A label with no free spot inside the content is
  * dropped. Deterministic for a given input, and seam-safe: x is a circle of 360 degrees.
@@ -171,14 +181,16 @@ function findSpot(
   metrics: LabelMetrics,
   rowStep: number,
 ): Placed | null {
-  for (let row = 0; row < MAX_ROWS; row++) {
+  for (const { row, shift } of SPOTS) {
     const bottom = summitY - metrics.leaderMin - row * rowStep;
     const top = bottom - metrics.height;
-    if (top < 0) return null; // higher rows only leave the content
-    for (const shift of SHIFTS) {
-      const candidate: Placed = { cx: summitX + shift * w, summitX, w, top, bottom, summitY };
-      if (!collides(candidate, placed, period, metrics.spacing)) return candidate;
-    }
+    if (top < 0) continue; // this row leaves the content
+    // A long leader must be steep (within 45 degrees of vertical); a jog of about one label
+    // width is fine, and is what lets two summits at the same spot sit side by side.
+    const run = Math.abs(shift * w);
+    if (run > Math.max(summitY - bottom, MAX_FLAT_JOG * w)) continue;
+    const candidate: Placed = { cx: summitX + shift * w, summitX, w, top, bottom, summitY };
+    if (!collides(candidate, placed, period, metrics.spacing)) return candidate;
   }
   return null;
 }

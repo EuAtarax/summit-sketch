@@ -1,10 +1,15 @@
 import type { EngineStats } from '../horizon/engine';
 import type { PanoramaScene } from '../horizon/scene';
+import type { LabelCandidate } from '../render/labelLayout';
+import { loadLabelFonts } from '../render/labels';
 import type { PanoramaStyle } from '../render/style';
 import { createAttributionFooter } from './attribution';
 import { formatCoords, formatSeconds } from './format';
 import { mountPanoramaCanvas, type PanoramaCanvas } from './panoramaCanvas';
 import { createStyleBar, renderOptionsFor, type StyleBar, type StyleChoice } from './stylePicker';
+
+const LABELS_ERROR = "Couldn't load peak names. Check your connection and try again.";
+const NO_LABELS = 'No named peaks are visible from here.';
 
 export interface PanoramaView {
   open(title: string, subtitle: string): void;
@@ -24,6 +29,8 @@ export function createPanoramaView(
   styles: readonly PanoramaStyle[],
   initialChoice: StyleChoice,
   onChoice: (c: StyleChoice) => void,
+  /** Peaks to label for a scene, most important first. */
+  loadLabels: (scene: PanoramaScene) => Promise<LabelCandidate[]>,
 ): PanoramaView {
   const root = document.createElement('section');
   root.className = 'viewer';
@@ -73,6 +80,10 @@ export function createPanoramaView(
 
   let viewer: PanoramaCanvas | null = null;
   let scene: PanoramaScene | null = null;
+  /** Label candidates of the current scene, once loaded. */
+  let candidates: LabelCandidate[] | null = null;
+  let labelRun = 0;
+  let labelsShown = initialChoice.labels;
 
   const styleOf = (id: string) => styles.find((s) => s.id === id) ?? styles[0]!;
 
@@ -83,10 +94,50 @@ export function createPanoramaView(
     (c) => {
       if (viewer && scene)
         viewer.setVariant(styleOf(c.styleId), renderOptionsFor(c, scene), c.exaggeration);
+      if (c.labels !== labelsShown) void syncLabels();
       onChoice(c);
     },
     () => viewer?.autoExaggeration ?? 1,
   );
+
+  /** Makes the viewer match the labels toggle, loading peak names on first use. */
+  async function syncLabels(): Promise<void> {
+    const wanted = styleBar.choice.labels;
+    labelsShown = wanted;
+    const run = ++labelRun;
+    const sc = scene;
+    if (!viewer || !sc) return;
+    if (!wanted) {
+      viewer.setLabels(null);
+      styleBar.setLabelState({ kind: 'idle' });
+      return;
+    }
+    if (!candidates) {
+      styleBar.setLabelState({ kind: 'loading' });
+      try {
+        [candidates] = await Promise.all([
+          loadLabels(sc),
+          loadLabelFonts(styles.map((s) => s.labelStyle)),
+        ]);
+      } catch (err) {
+        console.error(err);
+        if (run === labelRun && sc === scene) {
+          styleBar.setLabelState({
+            kind: 'message',
+            text: LABELS_ERROR,
+            retry: () => void syncLabels(),
+          });
+        }
+        return;
+      }
+    }
+    // A newer toggle or a different panorama superseded this one.
+    if (run !== labelRun || sc !== scene) return;
+    viewer?.setLabels(candidates);
+    styleBar.setLabelState(
+      candidates.length ? { kind: 'idle' } : { kind: 'message', text: NO_LABELS },
+    );
+  }
 
   const setStatus = (text: string, fraction: number | null) => {
     status.hidden = false;
@@ -108,6 +159,9 @@ export function createPanoramaView(
     styleBar,
     open(t, s) {
       clearViewer();
+      candidates = null;
+      labelRun++;
+      styleBar.setLabelState({ kind: 'idle' });
       title.textContent = t;
       subtitle.textContent = s;
       info.textContent = '';
@@ -131,6 +185,8 @@ export function createPanoramaView(
       );
       // The viewer sizes itself on the next frame; thumbnails use its heading then.
       requestAnimationFrame(() => viewer && styleBar.setScene(sc, viewer.heading.az));
+      candidates = null;
+      if (c.labels) void syncLabels();
       const o = sc.observer;
       info.textContent =
         `${formatCoords(o.lat, o.lon)} · eye ${Math.round(o.groundElev + o.eyeHeight)} m · ` +

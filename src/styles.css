@@ -364,8 +364,23 @@ input:focus-visible + *,
   font-weight: 700;
 }
 
-.adjust-button[aria-expanded='true'] {
+.adjust-button[aria-expanded='true'],
+.adjust-button[aria-pressed='true'] {
   border-color: var(--ink);
+}
+
+.adjust-button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--snow);
+}
+
+.label-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 16px 0;
+  font-size: 0.875rem;
 }
 
 .text-button:disabled {

@@ -1,5 +1,8 @@
 import type { ViewTransform } from './viewTransform';
 
+/** Narrow face so more labels fit; bundled via @fontsource (see main.ts). */
+export const LABEL_FONT_FAMILY = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif';
+
 /** How a style draws peak labels. Every style must stay readable on its own background. */
 export interface LabelStyle {
   fontFamily: string;
@@ -11,7 +14,8 @@ export interface LabelStyle {
   halo: string | null;
   /** A filled chip behind the text; null for none. */
   chip: { fill: string; stroke: string | null } | null;
-  leader: { color: string; width: number; dash: readonly number[] };
+  /** `halo` is drawn under the leader so it shows on both light and dark backgrounds. */
+  leader: { color: string; width: number; dash: readonly number[]; halo?: string };
   uppercase: boolean;
 }
 
@@ -52,6 +56,14 @@ export function labelMetrics(style: LabelStyle): LabelMetrics {
 
 export function labelFont(style: LabelStyle): string {
   return `${style.fontWeight} ${style.fontPx}px ${style.fontFamily}`;
+}
+
+/**
+ * Canvas text does not trigger @font-face loading, and layout measures text once per level,
+ * so the label fonts must be loaded before labels are laid out.
+ */
+export async function loadLabelFonts(styles: readonly LabelStyle[]): Promise<void> {
+  await Promise.all(styles.map((s) => document.fonts.load(labelFont(s), 'Ag')));
 }
 
 export function labelText(style: LabelStyle, name: string): string {
@@ -97,12 +109,17 @@ function drawLeader(
   x: number,
   summitY: number,
 ): void {
-  ctx.strokeStyle = style.leader.color;
-  ctx.lineWidth = style.leader.width;
   ctx.setLineDash([...style.leader.dash]);
   ctx.beginPath();
   ctx.moveTo(fromX, fromY);
   ctx.lineTo(x, summitY);
+  if (style.leader.halo) {
+    ctx.strokeStyle = style.leader.halo;
+    ctx.lineWidth = style.leader.width + 2;
+    ctx.stroke();
+  }
+  ctx.strokeStyle = style.leader.color;
+  ctx.lineWidth = style.leader.width;
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = style.leader.color;
