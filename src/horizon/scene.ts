@@ -26,6 +26,8 @@ export interface SeaIntervals {
   offsets: Uint32Array;
   lo: Float32Array;
   hi: Float32Array;
+  loDist: Float32Array;
+  hiDist: Float32Array;
 }
 
 export interface PanoramaScene {

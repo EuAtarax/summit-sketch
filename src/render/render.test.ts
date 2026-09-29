@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { PanoramaScene } from '../horizon/scene';
-import { LEVELS, levelFor, sceneAngleRange, TILE_PX, visibleTiles } from './tiles';
+import {
+  autoExaggeration,
+  LEVELS,
+  levelFor,
+  sceneAngleRange,
+  TILE_PX,
+  visibleTiles,
+} from './tiles';
 import { createViewTransform, gridStep, wrap180, wrap360 } from './viewTransform';
 
 describe('wrap helpers', () => {
@@ -92,6 +99,16 @@ describe('visibleTiles', () => {
     const rows = [...new Set(tiles.map((t) => t.ky))];
     expect(rows).toEqual([0, 1]);
   });
+
+  it('needs more rows with vertical exaggeration, and keeps tiles square on screen', () => {
+    const fine = LEVELS[4]!;
+    const view = { azLeft: 0, angleTop: 10, ppd: fine.ppd, width: 10, height: 10_000 };
+    const rows = (e: number) => new Set(visibleTiles(fine, view, content, e).map((t) => t.ky)).size;
+    expect(rows(1)).toBe(2);
+    expect(rows(2)).toBe(4); // 40° · 22.8 · 2 = 1820 px
+    const t = visibleTiles(fine, view, content, 2)[1]!;
+    expect(t.y).toBeCloseTo(TILE_PX, 6); // second row starts one tile lower
+  });
 });
 
 describe('sceneAngleRange', () => {
@@ -106,5 +123,43 @@ describe('sceneAngleRange', () => {
       },
     } as unknown as PanoramaScene;
     expect(sceneAngleRange(scene)).toEqual({ top: 5, bottom: -17 });
+  });
+});
+
+describe('autoExaggeration', () => {
+  const withHorizon = (f: (i: number) => number) =>
+    ({
+      horizonAngle: Float32Array.from({ length: 360 }, (_, i) => f(i)),
+    }) as unknown as PanoramaScene;
+
+  it('boosts flat horizons, capped at 3×', () => {
+    expect(
+      autoExaggeration(
+        withHorizon((i) => Math.sin(i / 20)),
+        6.5,
+        600,
+      ),
+    ).toBe(3);
+  });
+
+  it('leaves dramatic horizons at 1×', () => {
+    expect(
+      autoExaggeration(
+        withHorizon((i) => 25 * Math.sin(i / 20)),
+        6.5,
+        600,
+      ),
+    ).toBe(1);
+  });
+
+  it('lands in between for moderate relief, in quarter steps', () => {
+    const e = autoExaggeration(
+      withHorizon((i) => 5 * Math.sin(i / 20)),
+      6.5,
+      600,
+    );
+    expect(e).toBeGreaterThan(1);
+    expect(e).toBeLessThan(3);
+    expect((e * 4) % 1).toBe(0);
   });
 });

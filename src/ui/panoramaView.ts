@@ -1,9 +1,10 @@
 import type { EngineStats } from '../horizon/engine';
 import type { PanoramaScene } from '../horizon/scene';
-import { debugStyle } from '../render/styles/debugStyle';
+import type { PanoramaStyle } from '../render/style';
 import { createAttributionFooter } from './attribution';
 import { formatCoords, formatSeconds } from './format';
 import { mountPanoramaCanvas, type PanoramaCanvas } from './panoramaCanvas';
+import { createStyleBar, renderOptionsFor, type StyleBar, type StyleChoice } from './stylePicker';
 
 export interface PanoramaView {
   open(title: string, subtitle: string): void;
@@ -13,10 +14,17 @@ export interface PanoramaView {
   close(): void;
   /** The live viewer, if a scene is shown (for debugging and tests). */
   readonly canvas: PanoramaCanvas | null;
+  readonly styleBar: StyleBar;
 }
 
-/** Full-bleed viewer screen: title bar, progress, the endless panorama and attribution. */
-export function createPanoramaView(parent: HTMLElement, onBack: () => void): PanoramaView {
+/** Full-bleed viewer screen: title bar, progress, the endless panorama, styles, attribution. */
+export function createPanoramaView(
+  parent: HTMLElement,
+  onBack: () => void,
+  styles: readonly PanoramaStyle[],
+  initialChoice: StyleChoice,
+  onChoice: (c: StyleChoice) => void,
+): PanoramaView {
   const root = document.createElement('section');
   root.className = 'viewer';
   root.hidden = true;
@@ -53,14 +61,32 @@ export function createPanoramaView(parent: HTMLElement, onBack: () => void): Pan
   const pano = document.createElement('div');
   pano.className = 'viewer-pano';
 
+  const controls = document.createElement('div');
+  controls.className = 'viewer-controls';
+
   const info = document.createElement('p');
   info.className = 'viewer-info';
 
   stage.append(pano, status);
-  root.append(bar, stage, info, createAttributionFooter());
+  root.append(bar, stage, controls, info, createAttributionFooter());
   parent.append(root);
 
   let viewer: PanoramaCanvas | null = null;
+  let scene: PanoramaScene | null = null;
+
+  const styleOf = (id: string) => styles.find((s) => s.id === id) ?? styles[0]!;
+
+  const styleBar = createStyleBar(
+    controls,
+    styles,
+    initialChoice,
+    (c) => {
+      if (viewer && scene)
+        viewer.setVariant(styleOf(c.styleId), renderOptionsFor(c, scene), c.exaggeration);
+      onChoice(c);
+    },
+    () => viewer?.autoExaggeration ?? 1,
+  );
 
   const setStatus = (text: string, fraction: number | null) => {
     status.hidden = false;
@@ -79,24 +105,36 @@ export function createPanoramaView(parent: HTMLElement, onBack: () => void): Pan
     get canvas() {
       return viewer;
     },
+    styleBar,
     open(t, s) {
       clearViewer();
       title.textContent = t;
       subtitle.textContent = s;
       info.textContent = '';
+      controls.hidden = true;
       root.hidden = false;
       setStatus('Starting…', 0);
       back.focus({ preventScroll: true });
     },
     progress: setStatus,
-    showScene(scene, stats) {
+    showScene(sc, stats) {
       clearViewer();
+      scene = sc;
       status.hidden = true;
-      viewer = mountPanoramaCanvas(pano, scene, debugStyle);
-      const o = scene.observer;
+      controls.hidden = false;
+      const c = styleBar.choice;
+      viewer = mountPanoramaCanvas(
+        pano,
+        sc,
+        { style: styleOf(c.styleId), opts: renderOptionsFor(c, sc), exaggeration: c.exaggeration },
+        () => viewer && styleBar.refresh(viewer.heading.az),
+      );
+      // The viewer sizes itself on the next frame; thumbnails use its heading then.
+      requestAnimationFrame(() => viewer && styleBar.setScene(sc, viewer.heading.az));
+      const o = sc.observer;
       info.textContent =
         `${formatCoords(o.lat, o.lon)} · eye ${Math.round(o.groundElev + o.eyeHeight)} m · ` +
-        `${scene.radiusM / 1000} km · ${stats.tiles} tiles · ${stats.ridgelines} ridgelines · ` +
+        `${sc.radiusM / 1000} km · ${stats.tiles} tiles · ${stats.ridgelines} ridgelines · ` +
         `terrain ${formatSeconds(stats.loadMs)}, total ${formatSeconds(stats.totalMs)} · ` +
         `${stats.workers} workers`;
     },

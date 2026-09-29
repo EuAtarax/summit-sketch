@@ -56,6 +56,8 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         result.seaOffsets.buffer,
         result.seaLo.buffer,
         result.seaHi.buffer,
+        result.seaLoDist.buffer,
+        result.seaHiDist.buffer,
       ]);
     } else if (msg.type === 'snap') {
       const result =

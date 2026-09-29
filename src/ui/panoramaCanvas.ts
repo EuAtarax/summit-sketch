@@ -1,12 +1,26 @@
 import type { PanoramaScene } from '../horizon/scene';
-import { seedFor, type PanoramaStyle } from '../render/style';
-import { TileCache } from '../render/tileCache';
-import { levelFor, sceneAngleRange, visibleTiles, type Level } from '../render/tiles';
+import type { PanoramaStyle, RenderOptions } from '../render/style';
+import { TileCache, variantKey, type Variant } from '../render/tileCache';
+import {
+  autoExaggeration,
+  levelFor,
+  sceneAngleRange,
+  visibleTiles,
+  type Level,
+} from '../render/tiles';
 import { gridStep, wrap180, wrap360 } from '../render/viewTransform';
 
 export interface PanoramaCanvas {
   /** Points the view at an azimuth (and optionally angle and horizontal field of view). */
   lookAt(az: number, angle?: number, fovDeg?: number): void;
+  /** Switches style/options/exaggeration; tiles already rendered for it are reused. */
+  setVariant(style: PanoramaStyle, opts: RenderOptions, exaggeration: number | 'auto'): void;
+  /** Current view center azimuth and horizontal field of view. */
+  readonly heading: { az: number; fov: number };
+  /** The exaggeration 'auto' resolves to for this scene and screen. */
+  readonly autoExaggeration: number;
+  /** Time from the last setVariant until the view was fully drawn (ms), for tests. */
+  readonly lastSwitchMs: number | null;
   destroy(): void;
 }
 
@@ -34,7 +48,9 @@ const UI_FONT = '"Atkinson Hyperlegible", system-ui, sans-serif';
 export function mountPanoramaCanvas(
   host: HTMLElement,
   scene: PanoramaScene,
-  style: PanoramaStyle,
+  initial: { style: PanoramaStyle; opts: RenderOptions; exaggeration: number | 'auto' },
+  /** Called shortly after the user stops panning or zooming. */
+  onIdle: () => void = () => {},
 ): PanoramaCanvas {
   const canvas = document.createElement('canvas');
   canvas.className = 'pano-canvas';
@@ -55,13 +71,9 @@ export function mountPanoramaCanvas(
   const content = sceneAngleRange(scene);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-  const cache = new TileCache(
-    scene,
-    style,
-    { seed: seedFor(scene.observer.lat, scene.observer.lon) },
-    content,
-    dpr,
-  );
+  const cache = new TileCache(scene, content, dpr);
+  let requested = initial;
+  let variant: Variant = { style: initial.style, opts: initial.opts, exaggeration: 1 };
 
   let w = 0; // CSS px
   let h = 0;
@@ -70,7 +82,17 @@ export function mountPanoramaCanvas(
   let ppd = 0; // CSS px per degree
   let initialized = false;
   let frame = 0;
-  let lastComplete: Level | null = null;
+  let lastComplete: { variant: Variant; level: Level } | null = null;
+  let autoE = 1;
+  let idleTimer = 0;
+  let switchStart = 0;
+  let lastSwitchMs: number | null = null;
+  const scheduleIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(onIdle, 400);
+  };
+  /** Vertical CSS px per degree of elevation angle. */
+  const ppy = () => ppd * variant.exaggeration;
 
   // --- view state ---------------------------------------------------------------
 
@@ -79,7 +101,7 @@ export function mountPanoramaCanvas(
   function clampView() {
     ppd = Math.min(MAX_PX_PER_DEG, Math.max(minPpd(), ppd));
     az = wrap360(az);
-    const halfH = (h - COMPASS_PX) / 2 / ppd;
+    const halfH = (h - COMPASS_PX) / 2 / ppy();
     const span = content.top - content.bottom;
     // Center of the area below the compass strip.
     if (span <= 2 * halfH) angle = (content.top + content.bottom) / 2;
@@ -89,6 +111,8 @@ export function mountPanoramaCanvas(
   function initView() {
     ppd = Math.min(40, Math.max(3, w / DEFAULT_FOV_DEG));
     az = 0;
+    autoE = autoExaggeration(scene, ppd, h - COMPASS_PX);
+    applyVariant();
     // Frame the horizon: sky just above the highest horizon point in view.
     let maxH = -90;
     const n = scene.horizonAngle.length;
@@ -97,7 +121,7 @@ export function mountPanoramaCanvas(
       const a = scene.horizonAngle[Math.round(wrap360(az + d) / scene.azStep) % n]!;
       if (a > maxH) maxH = a;
     }
-    const halfH = (h - COMPASS_PX) / 2 / ppd;
+    const halfH = (h - COMPASS_PX) / 2 / ppy();
     angle = Math.min(content.top, maxH + 3) - halfH;
     clampView();
   }
@@ -105,19 +129,21 @@ export function mountPanoramaCanvas(
   function zoomAt(px: number, py: number, factor: number) {
     const cy = COMPASS_PX + (h - COMPASS_PX) / 2;
     const azAt = az + (px - w / 2) / ppd;
-    const angleAt = angle - (py - cy) / ppd;
+    const angleAt = angle - (py - cy) / ppy();
     ppd = Math.min(MAX_PX_PER_DEG, Math.max(minPpd(), ppd * factor));
     az = azAt - (px - w / 2) / ppd;
-    angle = angleAt + (py - cy) / ppd;
+    angle = angleAt + (py - cy) / ppy();
     clampView();
     requestDraw();
+    scheduleIdle();
   }
 
   function pan(dx: number, dy: number) {
     az -= dx / ppd;
-    angle += dy / ppd;
+    angle += dy / ppy();
     clampView();
     requestDraw();
+    scheduleIdle();
   }
 
   // --- drawing ------------------------------------------------------------------
@@ -126,21 +152,27 @@ export function mountPanoramaCanvas(
     if (!frame) frame = requestAnimationFrame(draw);
   }
 
+  function applyVariant() {
+    const e = requested.exaggeration === 'auto' ? autoE : requested.exaggeration;
+    variant = { style: requested.style, opts: requested.opts, exaggeration: e };
+  }
+
   function drawLevel(
+    v: Variant,
     level: Level,
     view: Parameters<typeof visibleTiles>[1],
     request: boolean,
   ): boolean {
     let complete = true;
-    for (const t of visibleTiles(level, view, content)) {
-      const tile = cache.get(t);
+    for (const t of visibleTiles(level, view, content, v.exaggeration)) {
+      const tile = cache.get(v, t);
       if (tile) {
         const x0 = Math.floor(t.x);
         const y0 = Math.floor(t.y);
         ctx.drawImage(tile, x0, y0, Math.ceil(t.x + t.size) - x0, Math.ceil(t.y + t.size) - y0);
       } else {
         complete = false;
-        if (request) cache.want(t);
+        if (request) cache.want(v, t);
       }
     }
     return complete;
@@ -151,10 +183,10 @@ export function mountPanoramaCanvas(
     if (!w || !h) return;
     const plotTop = COMPASS_PX;
     const plotH = h - COMPASS_PX;
-    const angleTop = angle + plotH / 2 / ppd;
+    const angleTop = angle + plotH / 2 / ppy();
     const view = {
       azLeft: az - w / 2 / ppd,
-      angleTop: angleTop + plotTop / ppd, // angle at canvas y = 0
+      angleTop: angleTop + plotTop / ppy(), // angle at canvas y = 0
       ppd: ppd * dpr,
       width: w * dpr,
       height: h * dpr,
@@ -162,12 +194,32 @@ export function mountPanoramaCanvas(
     const level = levelFor(ppd * dpr);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = style.paper;
+    ctx.fillStyle = variant.style.paper(variant.opts);
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Below the content: the style's nearest ground.
+    const groundY = Math.max(0, (angleTop + plotTop / ppy() - content.bottom) * ppy() * dpr);
+    if (groundY < canvas.height) {
+      ctx.fillStyle = variant.style.ground(variant.opts);
+      ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+    }
     cache.beginFrame();
-    // Show the last fully drawn level underneath while the new one renders.
-    if (lastComplete && lastComplete !== level) drawLevel(lastComplete, view, false);
-    if (drawLevel(level, view, true)) lastComplete = level;
+    // Show the last fully drawn level/style underneath while the new one renders.
+    const key = variantKey(variant);
+    if (
+      lastComplete &&
+      (lastComplete.level !== level || variantKey(lastComplete.variant) !== key)
+    ) {
+      if (lastComplete.variant.exaggeration === variant.exaggeration) {
+        drawLevel(lastComplete.variant, lastComplete.level, view, false);
+      }
+    }
+    if (drawLevel(variant, level, view, true)) {
+      lastComplete = { variant, level };
+      if (switchStart) {
+        lastSwitchMs = performance.now() - switchStart;
+        switchStart = 0;
+      }
+    }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawAngleLabels(angleTop, plotTop);
@@ -222,7 +274,7 @@ export function mountPanoramaCanvas(
   }
 
   function drawAngleLabels(angleTop: number, plotTop: number) {
-    const step = gridStep(ppd, 28);
+    const step = gridStep(ppy(), 28);
     ctx.font = `11px ${UI_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
@@ -230,10 +282,10 @@ export function mountPanoramaCanvas(
     ctx.strokeStyle = 'rgba(244,246,247,0.9)';
     ctx.fillStyle = '#56606A';
     // Only label angles where there is content.
-    const bottom = Math.max(content.bottom, angleTop - (h - plotTop) / ppd);
+    const bottom = Math.max(content.bottom, angleTop - (h - plotTop) / ppy());
     const top = Math.min(content.top, angleTop);
     for (let a = Math.ceil(bottom / step) * step; a <= top; a += step) {
-      const y = plotTop + (angleTop - a) * ppd - 2;
+      const y = plotTop + (angleTop - a) * ppy() - 2;
       if (y < plotTop + 12) continue;
       const label = `${a > 0 ? '+' : a < 0 ? '−' : ''}${Number(Math.abs(a).toFixed(1))}°`;
       ctx.strokeText(label, 4, y);
@@ -375,6 +427,26 @@ export function mountPanoramaCanvas(
   resize.observe(host);
 
   return {
+    get heading() {
+      return { az, fov: w / ppd };
+    },
+    get autoExaggeration() {
+      return autoE;
+    },
+    get lastSwitchMs() {
+      return lastSwitchMs;
+    },
+    setVariant(style, opts, exaggeration) {
+      requested = { style, opts, exaggeration };
+      switchStart = performance.now();
+      lastSwitchMs = null;
+      if (!initialized) return;
+      const before = variant.exaggeration;
+      applyVariant();
+      // Keep the same angle at the center when the vertical scale changes.
+      if (variant.exaggeration !== before) clampView();
+      requestDraw();
+    },
     lookAt(toAz, toAngle, fovDeg) {
       stopInertia();
       az = toAz;
@@ -385,6 +457,7 @@ export function mountPanoramaCanvas(
     },
     destroy() {
       stopInertia();
+      clearTimeout(idleTimer);
       if (frame) cancelAnimationFrame(frame);
       resize.disconnect();
       canvas.remove();

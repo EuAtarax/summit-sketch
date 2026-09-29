@@ -54,6 +54,7 @@ button {
 
 a:focus-visible,
 button:focus-visible,
+input[type='range']:focus-visible,
 input:focus-visible + *,
 [tabindex]:focus-visible {
   outline: 3px solid var(--trail-red);
@@ -305,6 +306,120 @@ input:focus-visible + *,
 .pano-zoom-button {
   background: rgb(244 246 247 / 0.92);
   box-shadow: 0 1px 4px rgb(31 42 51 / 0.25);
+}
+
+/* Style bar */
+
+.viewer-controls {
+  border-top: 1px solid var(--hairline);
+  background: var(--snow);
+}
+
+.style-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.style-list {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.style-option {
+  flex: none;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: none;
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.style-option canvas {
+  display: block;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+
+.style-option[aria-checked='true'] {
+  border-color: var(--ink);
+  font-weight: 700;
+}
+
+.adjust-button,
+.text-button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 2px solid var(--hairline);
+  border-radius: 8px;
+  background: none;
+  font-weight: 700;
+}
+
+.adjust-button[aria-expanded='true'] {
+  border-color: var(--ink);
+}
+
+.text-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.adjust-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px 16px 4px;
+}
+
+.adjust-row {
+  display: grid;
+  grid-template-columns: 6.5em 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+
+.adjust-row .range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adjust-row input[type='range'] {
+  flex: 1;
+  min-height: 44px;
+  accent-color: var(--ink);
+}
+
+.adjust-row output {
+  min-width: 5.5em;
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented.palette {
+  display: flex;
+  gap: 6px;
+}
+
+.segmented.palette button {
+  flex: 1;
+  min-height: 44px;
+  border: 2px solid var(--hairline);
+  border-radius: 8px;
+  background: none;
+}
+
+.segmented.palette button[aria-checked='true'] {
+  border-color: var(--ink);
+  font-weight: 700;
 }
 
 .viewer-info {

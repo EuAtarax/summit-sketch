@@ -58,30 +58,52 @@ export interface TileRef {
 
 /**
  * Tiles covering a viewport. The view shows azimuth azLeft at x = 0 and angle angleTop at
- * y = 0, at ppd device px/deg. Rows count down from the content top.
+ * y = 0, at ppd device px per degree horizontally (ppd·exaggeration vertically). Rows
+ * count down from the content top.
  */
 export function visibleTiles(
   level: Level,
   view: { azLeft: number; angleTop: number; ppd: number; width: number; height: number },
   content: { top: number; bottom: number },
+  exaggeration = 1,
 ): TileRef[] {
   const scale = view.ppd / level.ppd;
   const size = TILE_PX * scale;
-  const rows = Math.ceil(((content.top - content.bottom) * level.ppd) / TILE_PX);
+  const levelY = level.ppd * exaggeration; // tile px per degree of angle
+  const viewY = view.ppd * exaggeration;
+  const rows = Math.ceil(((content.top - content.bottom) * levelY) / TILE_PX);
   const kx0 = Math.floor(view.azLeft / level.tileDeg);
   const kx1 = Math.floor((view.azLeft + view.width / view.ppd) / level.tileDeg);
-  const ky0 = Math.max(0, Math.floor(((content.top - view.angleTop) * level.ppd) / TILE_PX));
+  const ky0 = Math.max(0, Math.floor(((content.top - view.angleTop) * levelY) / TILE_PX));
   const ky1 = Math.min(
     rows - 1,
-    Math.floor(((content.top - (view.angleTop - view.height / view.ppd)) * level.ppd) / TILE_PX),
+    Math.floor(((content.top - (view.angleTop - view.height / viewY)) * levelY) / TILE_PX),
   );
   const out: TileRef[] = [];
   for (let ky = ky0; ky <= ky1; ky++) {
-    const rowTop = content.top - (ky * TILE_PX) / level.ppd;
-    const y = (view.angleTop - rowTop) * view.ppd;
+    const rowTop = content.top - (ky * TILE_PX) / levelY;
+    const y = (view.angleTop - rowTop) * viewY;
     for (let kx = kx0; kx <= kx1; kx++) {
       out.push({ level, kx, ky, x: (kx * level.tileDeg - view.azLeft) * view.ppd, y, size });
     }
   }
   return out;
+}
+
+/**
+ * Default vertical exaggeration: scale the typical horizon relief (5th–95th percentile)
+ * to about 22 % of the plot height, within 1–3×.
+ */
+export function autoExaggeration(
+  scene: PanoramaScene,
+  pxPerDeg: number,
+  plotHeightPx: number,
+): number {
+  const h = Array.from(scene.horizonAngle)
+    .filter((a) => !Number.isNaN(a))
+    .sort((a, b) => a - b);
+  if (h.length < 2) return 1;
+  const relief = Math.max(0.5, h[Math.floor(h.length * 0.95)]! - h[Math.floor(h.length * 0.05)]!);
+  const e = (0.22 * plotHeightPx) / (relief * pxPerDeg);
+  return Math.min(3, Math.max(1, Math.round(e * 4) / 4));
 }

@@ -35,10 +35,13 @@ function distColor(dist: number, radiusM: number): string {
 export const debugStyle: PanoramaStyle = {
   id: 'debug',
   name: 'Debug',
-  paper: PAPER,
+  paper: () => PAPER,
+  ground: () => PAPER,
+  uses: [],
   render(ctx, scene, v) {
     const { width, height, pxPerDeg: ppd } = v;
-    const angleBottom = v.angleAtTop - height / ppd;
+    const ppy = ppd * v.exaggeration;
+    const angleBottom = v.angleAtTop - height / ppy;
     const step = scene.azStep;
     const n = scene.horizonAngle.length;
     // Rays covering the slice (unwrapped indices), plus one on each side.
@@ -64,7 +67,7 @@ export const debugStyle: PanoramaStyle = {
 
     // Grid
     ctx.lineWidth = 1;
-    const hStep = gridStep(ppd, 28);
+    const hStep = gridStep(ppy, 28);
     for (let a = Math.ceil(angleBottom / hStep) * hStep; a <= v.angleAtTop; a += hStep) {
       ctx.strokeStyle = Math.abs(a) < 1e-9 ? 'rgba(31,42,51,0.45)' : 'rgba(138,145,153,0.25)';
       const y = Math.round(v.angleToY(a)) + 0.5;

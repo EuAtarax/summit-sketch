@@ -135,7 +135,13 @@ export function assembleScene(
     horizonAngle: cast.horizonAngle,
     horizonDist: cast.horizonDist,
     ridgelines: unpackRidges(ridges),
-    sea: { offsets: cast.seaOffsets, lo: cast.seaLo, hi: cast.seaHi },
+    sea: {
+      offsets: cast.seaOffsets,
+      lo: cast.seaLo,
+      hi: cast.seaHi,
+      loDist: cast.seaLoDist,
+      hiDist: cast.seaHiDist,
+    },
   };
 }
 

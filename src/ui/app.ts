@@ -2,6 +2,8 @@ import { metersPerPixel } from '../geo/tiles';
 import { CancelledComputeError, HorizonEngine, type EngineRun } from '../horizon/engine';
 import { nearestPeak, type BBox, type Peak } from '../peaks/overpass';
 import { PeakStore } from '../peaks/peakStore';
+import { availableStyles, DEFAULT_STYLE_ID } from '../render/styles';
+import { loadChoice, saveChoice } from './stylePicker';
 import { formatCoords } from './format';
 import { createMapPicker } from './mapPicker';
 import { createPanoramaView } from './panoramaView';
@@ -57,11 +59,26 @@ export function mountApp(root: HTMLElement): void {
       updateHint(picker.zoom);
     },
   });
-  const view = createPanoramaView(root, () => {
-    run?.cancel();
-    run = null;
-    view.close();
-  });
+  const styles = availableStyles(DEBUG);
+  const choice = loadChoice(DEBUG ? 'debug' : DEFAULT_STYLE_ID);
+  const urlStyle = new URLSearchParams(location.search).get('style');
+  if (urlStyle && styles.some((st) => st.id === urlStyle)) choice.styleId = urlStyle;
+  const view = createPanoramaView(
+    root,
+    () => {
+      run?.cancel();
+      run = null;
+      view.close();
+    },
+    styles,
+    choice,
+    (c) => {
+      saveChoice(c);
+      const url = new URL(location.href);
+      url.searchParams.set('style', c.styleId);
+      history.replaceState(null, '', url);
+    },
+  );
 
   function updateHint(zoom: number) {
     hint.hidden = selected !== null;

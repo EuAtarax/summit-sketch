@@ -46,6 +46,9 @@ export interface CastResult {
   seaOffsets: Uint32Array;
   seaLo: Float32Array;
   seaHi: Float32Array;
+  /** Distance of the nearest and farthest visible sea sample of each interval, meters. */
+  seaLoDist: Float32Array;
+  seaHiDist: Float32Array;
 }
 
 /**
@@ -79,6 +82,14 @@ export function castRays(p: CastParams): CastResult {
   const seaOffsets = new Uint32Array(rayCount + 1);
   const sLo: number[] = [];
   const sHi: number[] = [];
+  const sLoD: number[] = [];
+  const sHiD: number[] = [];
+  const closeSea = (loT: number, hiT: number, loD: number, hiD: number) => {
+    sLo.push(Math.atan(loT) * R2D);
+    sHi.push(Math.atan(hiT) * R2D);
+    sLoD.push(loD);
+    sHiD.push(hiD);
+  };
 
   for (let r = 0; r < rayCount; r++) {
     crestOffsets[r] = cAngle.length;
@@ -101,6 +112,8 @@ export function castRays(p: CastParams): CastResult {
     let seaOpen = false;
     let seaLoT = 0;
     let seaHiT = 0;
+    let seaLoD = 0;
+    let seaHiD = 0;
 
     let bi = -1;
     let grid: TileGrid | undefined;
@@ -132,18 +145,17 @@ export function castRays(p: CastParams): CastResult {
         if (isSea) {
           if (seaOpen && seaHiT === maxT) {
             seaHiT = t;
+            seaHiD = d;
           } else {
-            if (seaOpen) {
-              sLo.push(Math.atan(seaLoT) * R2D);
-              sHi.push(Math.atan(seaHiT) * R2D);
-            }
+            if (seaOpen) closeSea(seaLoT, seaHiT, seaLoD, seaHiD);
             seaOpen = true;
             seaLoT = maxT === -Infinity ? t : maxT;
             seaHiT = t;
+            seaLoD = d;
+            seaHiD = d;
           }
         } else if (seaOpen) {
-          sLo.push(Math.atan(seaLoT) * R2D);
-          sHi.push(Math.atan(seaHiT) * R2D);
+          closeSea(seaLoT, seaHiT, seaLoD, seaHiD);
           seaOpen = false;
         }
         maxT = t;
@@ -164,10 +176,7 @@ export function castRays(p: CastParams): CastResult {
       }
     }
 
-    if (seaOpen) {
-      sLo.push(Math.atan(seaLoT) * R2D);
-      sHi.push(Math.atan(seaHiT) * R2D);
-    }
+    if (seaOpen) closeSea(seaLoT, seaHiT, seaLoD, seaHiD);
     // The outermost visible point is the skyline; keep it regardless of the dip.
     if (pending || visible) {
       cAngle.push(Math.atan(pending ? pendT : visT) * R2D);
@@ -193,6 +202,8 @@ export function castRays(p: CastParams): CastResult {
     seaOffsets,
     seaLo: Float32Array.from(sLo),
     seaHi: Float32Array.from(sHi),
+    seaLoDist: Float32Array.from(sLoD),
+    seaHiDist: Float32Array.from(sHiD),
   };
 }
 
@@ -214,6 +225,8 @@ export function mergeCastResults(parts: CastResult[]): CastResult {
     seaOffsets: new Uint32Array(rayCount + 1),
     seaLo: new Float32Array(seaCount),
     seaHi: new Float32Array(seaCount),
+    seaLoDist: new Float32Array(seaCount),
+    seaHiDist: new Float32Array(seaCount),
   };
   let r0 = 0;
   let c0 = 0;
@@ -230,6 +243,8 @@ export function mergeCastResults(parts: CastResult[]): CastResult {
     out.crestElev.set(part.crestElev, c0);
     out.seaLo.set(part.seaLo, s0);
     out.seaHi.set(part.seaHi, s0);
+    out.seaLoDist.set(part.seaLoDist, s0);
+    out.seaHiDist.set(part.seaHiDist, s0);
     r0 += part.rayCount;
     c0 += part.crestAngle.length;
     s0 += part.seaLo.length;

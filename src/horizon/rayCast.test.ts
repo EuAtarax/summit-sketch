@@ -169,5 +169,10 @@ describe('sea intervals', () => {
     // The sea surface reaches the radius, so its top is the horizon toward the south.
     expect(hi).toBeCloseTo(scene.horizonAngle[180 / 5]!, 6);
     expect(hi).toBeCloseTo(elevationAngleDeg(0, 902, 30_000), 1);
+    // Sea starts just past the coast (~5.5 km) and runs out to the radius.
+    const i = scene.sea.offsets[180 / 5]!;
+    expect(scene.sea.loDist[i]).toBeGreaterThan(5000);
+    expect(scene.sea.loDist[i]).toBeLessThan(6500);
+    expect(scene.sea.hiDist[i]).toBeGreaterThan(29_000);
   });
 });
