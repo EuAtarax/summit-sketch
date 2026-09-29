@@ -22,14 +22,29 @@ export function variantKey(v: Variant): string {
 export class TileCache {
   private readonly tiles = new Map<string, HTMLCanvasElement>();
   private queue = new Map<string, { variant: Variant; level: Level; kx: number; ky: number }>();
+  /** Tiles rendered so far (for tests and diagnostics). */
+  rendered = 0;
 
   constructor(
     private readonly scene: PanoramaScene,
     private readonly content: { top: number; bottom: number },
     private readonly dpr: number,
     /** Each tile is 1 MB of pixels. */
-    private readonly maxTiles = 48,
-  ) {}
+    private readonly baseTiles = 48,
+  ) {
+    this.maxTiles = baseTiles;
+  }
+
+  private maxTiles: number;
+
+  /**
+   * Makes sure the cache can hold what one frame draws (plus headroom). A fixed size
+   * thrashed on big screens: tiles evicted before being drawn were re-rendered every
+   * frame, which flickered.
+   */
+  reserve(tilesPerFrame: number): void {
+    this.maxTiles = Math.min(256, Math.max(this.baseTiles, Math.ceil(tilesPerFrame * 1.5)));
+  }
 
   private static column(t: { level: Level; kx: number }): number {
     return ((t.kx % t.level.n) + t.level.n) % t.level.n;
@@ -73,6 +88,7 @@ export class TileCache {
       if (done > 0 && performance.now() - start > budgetMs) break;
       this.queue.delete(key);
       this.tiles.set(key, this.renderTile(t.variant, t.level, t.kx, t.ky));
+      this.rendered++;
       done++;
       while (this.tiles.size > this.maxTiles) {
         this.tiles.delete(this.tiles.keys().next().value as string);

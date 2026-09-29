@@ -21,6 +21,8 @@ export interface PanoramaCanvas {
   readonly autoExaggeration: number;
   /** Time from the last setVariant until the view was fully drawn (ms), for tests. */
   readonly lastSwitchMs: number | null;
+  /** Tiles rendered so far, for tests. */
+  readonly tilesRendered: number;
   destroy(): void;
 }
 
@@ -29,6 +31,7 @@ const MAX_FOV_DEG = 180;
 const MAX_PX_PER_DEG = 80;
 const COMPASS_PX = 28;
 const MAX_DPR = 3;
+const MAX_CANVAS_PX = 9_000_000;
 const CARDINALS: Record<number, string> = {
   0: 'N',
   45: 'NE',
@@ -70,7 +73,13 @@ export function mountPanoramaCanvas(
   const ctx = canvas.getContext('2d')!;
   const content = sceneAngleRange(scene);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+  // Cap the canvas at ~9 M device pixels: on very large displays full resolution needs
+  // hundreds of tiles per frame. Phones keep their full density.
+  const dpr = Math.min(
+    window.devicePixelRatio || 1,
+    MAX_DPR,
+    Math.sqrt(MAX_CANVAS_PX / Math.max(1, innerWidth * innerHeight)),
+  );
   const cache = new TileCache(scene, content, dpr);
   let requested = initial;
   let variant: Variant = { style: initial.style, opts: initial.opts, exaggeration: 1 };
@@ -87,6 +96,7 @@ export function mountPanoramaCanvas(
   let idleTimer = 0;
   let switchStart = 0;
   let lastSwitchMs: number | null = null;
+  let tilesThisFrame = 0;
   const scheduleIdle = () => {
     clearTimeout(idleTimer);
     idleTimer = window.setTimeout(onIdle, 400);
@@ -164,7 +174,9 @@ export function mountPanoramaCanvas(
     request: boolean,
   ): boolean {
     let complete = true;
-    for (const t of visibleTiles(level, view, content, v.exaggeration)) {
+    const tiles = visibleTiles(level, view, content, v.exaggeration);
+    tilesThisFrame += tiles.length;
+    for (const t of tiles) {
       const tile = cache.get(v, t);
       if (tile) {
         const x0 = Math.floor(t.x);
@@ -203,6 +215,7 @@ export function mountPanoramaCanvas(
       ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
     }
     cache.beginFrame();
+    tilesThisFrame = 0;
     // Show the last fully drawn level/style underneath while the new one renders.
     const key = variantKey(variant);
     if (
@@ -221,6 +234,7 @@ export function mountPanoramaCanvas(
       }
     }
 
+    cache.reserve(tilesThisFrame);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawAngleLabels(angleTop, plotTop);
     drawCompass();
@@ -435,6 +449,9 @@ export function mountPanoramaCanvas(
     },
     get lastSwitchMs() {
       return lastSwitchMs;
+    },
+    get tilesRendered() {
+      return cache.rendered;
     },
     setVariant(style, opts, exaggeration) {
       requested = { style, opts, exaggeration };
