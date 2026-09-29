@@ -90,6 +90,20 @@ The sun's path across the panorama, for the chosen day, as an overlay. Pure math
 - [ ] 360° via cube camera → equirectangular strip, feeding the same viewer and export
 - [ ] Optional later: satellite imagery draped on the terrain, only if a free source with a compatible license is found (check the license first)
 
+## Feature ideas (unscheduled, to discuss)
+
+- [ ] **Jump to a peak by name.** Already works from the map: searching a peak (Nominatim) centers the map and opens it as a selectable summit (Phase 5). Possible extensions: search from inside the viewer to switch summit without going back, and "look toward" a peak: search a peak that is visible in the current panorama and turn the view to it (the label pipeline already knows its azimuth and angle).
+- [ ] **Pitch / projection.** The panorama uses a cylindrical projection with vertical exaggeration (1 to 3 times), so it can look steep and close, and its height varies a lot between scenes (tall from a summit with deep valleys below, flat from a coast). Options, from cheap to costly:
+  - Vertical "pitch" as a framing choice: cap the lowest shown angle and fit the exaggeration to the screen, so the view always fills it. Cheap, no new projection.
+  - A rectilinear (perspective) rendering of the current view: reproject the cylindrical tiles onto a virtual pinhole camera with a settable pitch and field of view. The tile cache stays; only the final draw changes. Costs GPU or per-pixel work each frame and distorts the label and sun overlays, which then need the same mapping.
+  - True camera tilt with real perspective belongs to the three.js renderer (Phase 7), where pitch is native.
+  Recommendation: framing first (cheap), decide on rectilinear after seeing it.
+- [ ] **"Can I see mountain A from B?"** and **"from where can I see A?"**
+  - Point-to-point line of sight: sample the elevation profile between B and A, apply curvature and refraction (`k = 0.13`), report visible or blocked, the blocking point, and the clearance in meters and degrees. Pure math with tests on synthetic terrain; a search box for each end (Nominatim peak search) or a tap on the map.
+  - List of peaks from which A can be seen: by reciprocity this is almost the peak list of A's own panorama, so it reuses the label pipeline (A as observer, all named OSM peaks visible from A). Differences to handle: eye height at B, and the summit tip of A versus a visible slope sample.
+  - Areas from which A can be seen: a viewshed raster around A. Needs a new per-cell output from the ray cast (visible cells, not just crests), drawn as an overlay on the map picker. Cost is a full-disc scan at a coarse cell size; do it in the workers with progress.
+  - Open questions: maximum distance (visibility of a 4000 m peak reaches 200 km and beyond), the eye height at B (2 m default, adjustable), and how to present thousands of peaks (ranked list, filter by distance and by how much of A is visible).
+
 ## Camping spot finder (needs examination and planning first)
 Find suitable places to camp in the wild: flat enough for a small 2-person tent, on or near a trail. This is not scheduled. It starts with an examination phase whose result decides whether and how to build it; nothing below is implemented before that decision.
 
