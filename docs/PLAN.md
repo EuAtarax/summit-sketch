@@ -162,8 +162,17 @@ Find suitable places to camp in the wild: flat enough for a small 2-person tent,
 - Side benefit for the panorama: in Switzerland the same 2 m data could sharpen the near field of the view (see Rendering quality).
 
 **Examination (spike)**
-- [ ] S1: COG reader and LV95 conversion, with tests; read the Leuggelenstock/Ijenstock area.
-- [ ] S2: slope, curvature, roughness and canopy rasters at 2 m for a 4 x 4 km area; show them as an overlay on the map picker; check visually against the aerial imagery and the national map.
+- [x] S1: COG reader and LV95 conversion, with tests; read the Leuggelenstock/Ijenstock area.
+- [x] S2: slope, curvature, roughness and canopy rasters at 2 m for a 4 x 4 km area; show them as an overlay on the map picker; check visually against the aerial imagery and the national map.
+**Results of S1 and S2** (spike page `camping.html`, run with `npm run dev` and open `/summit-sketch/camping.html`; the page is a development tool, not part of the installed app):
+- **Reader:** own COG reader (LZW decoder, range requests, LV95 conversion) with tests, including a real 128 x 128 swissALTI3D tile committed as a fixture (the decoded surface must be smooth and alpine, which random garbage would fail). Small files (the 1.2 MB 2 m tiles) are fetched whole in one request: firing dozens of parallel range requests made the browser drop connections and was far slower than the whole tile, which downloads in about 0.2 s. Requests are capped at 6 in flight overall and retried twice on network errors.
+- **Speed:** a 2 x 2 km window at 2 m (1000 x 1000 cells) loads and analyses in about 1 s; a 1 x 1 km window with the 0.5 m surface model (vegetation height) takes about 3 s. The analysis currently runs on the main thread; it belongs in a worker before it is used in the app.
+- **Registration:** the overlays line up with the national map and the aerial image (the LV95 grid is rotated about 1 degree against north here, so the overlay is resampled per output pixel). The slope layer lights up the flat basins Seeboden and Ruppenseeli exactly where the map shows them.
+- **Vegetation height** (surface minus terrain) follows the tree line of the aerial image closely; meadows stay clear. This confirms that ground type can be derived from the swisstopo data itself.
+- **Suitability in the test area** (Leuggelenstock and Ijenstock): only 1.2 % of cells (0.3 % with vegetation) fit a pitch. The area is mostly steep grass flanks and forest, so this is plausible, and the few candidates sit on the flat basins. The thresholds are a first guess and are not calibrated.
+- **Roughness at 2 m** shows terraces and animal tracks on steep flanks as stripes and speckles even on meadow, so it separates smooth from very rough ground only coarsely. Boulders and scree need the 0.5 m terrain model, which the refinement step (a 100 x 100 m window around top candidates) should use. Calibrating the slope, roughness and vegetation thresholds is part of S5.
+- **Other places to test:** a busier alpine valley with known bivouac spots (to check that real spots score well), and a flat alpine plateau.
+
 - [ ] S3: trails, water and drinking water from OSM, with the trail-distance and water-distance rasters.
 - [ ] S4: protected-area flags from the BAFU layers with season awareness.
 - [ ] S5: scoring, presets, heatmap and ranked spots; inspect the top spots on aerial imagery and against known camping and bivouac places in the area.
