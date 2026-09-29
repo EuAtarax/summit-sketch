@@ -1,6 +1,6 @@
 import type { PanoramaScene } from '../horizon/scene';
 import { layoutStyleLabels, type LabelCandidate } from './labelLayout';
-import type { LabeledPeak } from './labels';
+import { scaleLabelStyle, type LabeledPeak } from './labels';
 import type { PanoramaStyle, RenderOptions } from './style';
 import { createViewTransform, wrap360 } from './viewTransform';
 
@@ -10,6 +10,8 @@ export const EXPORT_MAX_PIXELS = 16_000_000;
 export const EXPORT_PX_PER_DEG = 16;
 /** Strips are rendered one at a time so the main thread stays responsive. */
 const STRIP_PX = 256;
+/** Footer text size at which labels keep their on-screen size. */
+const LABEL_BASE_PX = 14;
 const FOOTER_BACKGROUND = '#F4F6F7';
 const FOOTER_INK = '#1F2A33';
 const FOOTER_FONT = '"Atkinson Hyperlegible", system-ui, sans-serif';
@@ -123,16 +125,18 @@ export async function renderExport(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas is not available');
 
+  // Labels grow with the image like the footer text, so they stay legible when it is shrunk.
+  const labelScale = plan.footerFontPx / LABEL_BASE_PX;
   const labels = req.labelPeaks
     ? layoutStyleLabels(
         req.labelPeaks,
-        req.style.labelStyle,
+        scaleLabelStyle(req.style.labelStyle, labelScale),
         { pxPerDeg: plan.pxPerDeg, exaggeration: req.exaggeration, angleTop: req.angleTop },
         ctx,
       )
     : null;
   const azStart = req.azStart ?? (labels ? bestSeamAz(labels, plan.pxPerDeg) : 0);
-  const opts: RenderOptions = { ...req.opts, labels };
+  const opts: RenderOptions = { ...req.opts, labels, labelScale };
 
   const strips = Math.ceil(plan.width / STRIP_PX);
   for (let i = 0; i < strips; i++) {

@@ -13,6 +13,8 @@ export interface RenderOptions {
   palette: PaletteId;
   /** Placed peak labels for the slice being drawn (Phase 3); null or absent draws none. */
   labels?: readonly LabeledPeak[] | null;
+  /** Size factor for labels in large exports (footer-relative); absent or 1 on screen. */
+  labelScale?: number;
 }
 
 /**

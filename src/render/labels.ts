@@ -73,6 +73,20 @@ export interface LabelMetrics {
   spacing: number;
 }
 
+/** The style with fonts and lines scaled, for images much larger than the screen. */
+export function scaleLabelStyle(style: LabelStyle, k: number): LabelStyle {
+  if (k === 1) return style;
+  return {
+    ...style,
+    fontPx: style.fontPx * k,
+    leader: {
+      ...style.leader,
+      width: style.leader.width * k,
+      dash: style.leader.dash.map((d) => d * k),
+    },
+  };
+}
+
 export function labelMetrics(style: LabelStyle): LabelMetrics {
   return {
     height: Math.round(style.fontPx * 1.3),
@@ -107,9 +121,12 @@ export function drawPeakLabels(
   ctx: CanvasRenderingContext2D,
   view: ViewTransform,
   labels: readonly LabeledPeak[] | null | undefined,
-  style: LabelStyle,
+  baseStyle: LabelStyle,
+  /** Size factor for large exports; 1 on screen. */
+  scale = 1,
 ): void {
   if (!labels?.length) return;
+  const style = scaleLabelStyle(baseStyle, scale);
   const m = labelMetrics(style);
   ctx.save();
   ctx.font = labelFont(style);

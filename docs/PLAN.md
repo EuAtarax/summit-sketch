@@ -52,11 +52,14 @@ The horizon shape and the direction of major peaks should match.
 
 ## Phase 4: Viewer + export
 - [x] 360° viewer: drag/swipe with inertia, wrap-around, pinch to zoom, compass strip with N/E/S/W and degree ticks
-- [ ] Tap a label to show name, elevation, and distance
-- [ ] Export PNG of the full 360° (default 16 px/deg) and of the current view. Cap at 16 M pixels because of the iOS canvas limit.
-- [ ] Exports include a small footer with summit name, coordinates, style, and attribution
-- [ ] Mobile: share via the Web Share API with the file; desktop: download
+- [x] Tap a label to show name, elevation, and distance
+- [x] Export PNG of the full 360° (default 16 px/deg) and of the current view. Cap at 16 M pixels because of the iOS canvas limit.
+- [x] Exports include a small footer with summit name, coordinates, style, and attribution
+- [x] Mobile: share via the Web Share API with the file; desktop: download
 - [ ] Stretch: SVG export for Pencil, Ink and Blueprint
+
+**Implementation notes:** a tap on a label opens a bottom card (name, elevation, distance, bearing) and highlights the label in trail red. Export renders 256 px strips into one canvas, yielding between strips, at 16 px/deg (lowered in 5 % steps until the image, footer included, fits 16 M pixels). The whole-panorama image starts at the azimuth that cuts the fewest labels (north if free). Label fonts scale with the footer text so they stay legible in large images. Touch devices share the file via the Web Share API, everything else downloads it.
+
 
 ## Phase 5: PWA + polish
 - [ ] Installable PWA; runtime caching of terrain tiles (Cache API, ~200 MB budget with eviction)
