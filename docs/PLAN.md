@@ -68,6 +68,16 @@ The horizon shape and the direction of major peaks should match.
 - [ ] Clear empty, loading, offline, and error states
 - [ ] Map picker layer choice: **normal** (OSM standard), **terrain** (e.g. OpenTopoMap) and **satellite**. Only free sources whose terms allow this use (check the license first; e.g. EOX Sentinel-2 cloudless is non-commercial with attribution, Esri World Imagery has its own terms). Remember the choice, and show each layer's attribution.
 
+## Phase 5b: Sun path
+The sun's path across the panorama, for the chosen day, as an overlay. Pure math in `geo/` (or a new `sun/`), drawn like the compass strip and labels, so it needs no scene recompute.
+- [ ] Sun position (azimuth, elevation) for a latitude, longitude and instant, as a pure function with tests against known values (e.g. noon altitude at an equinox equals 90 minus latitude; solstice declination 23.44 degrees). No dependency: a compact NOAA/Meeus-style formula is enough (well under 1 degree).
+- [ ] Atmospheric refraction consistent with the horizon math (k = 0.13 for terrain; standard refraction of about 0.57 degrees for the sun at the horizon), and the sun's disc radius (0.27 degrees) for rise and set.
+- [ ] Overlay in the viewer: the day's arc as a dotted line in absolute azimuth/angle space, hour ticks, the current position as a marker, sunrise and sunset markers. Drawn on top of the tiles (it changes with time, so it must not invalidate the tile cache).
+- [ ] Time control: "Now" by default, a date picker and a time-of-day slider. Live update while the viewer is open.
+- [ ] Terrain-aware: compare the sun's elevation with the skyline (`horizonAngle`) along its azimuth, so the app can say when the sun really rises and sets behind the terrain, and mark the stretches of the arc that are hidden behind ridges.
+- [ ] A toggle (off by default, remembered), and an option to include the arc and the date in exports and in the export footer.
+- [ ] Open question: time zone. The browser knows the device zone but not the zone of the summit, and a time zone database is a large dependency. Start with the device zone plus solar time, and revisit.
+
 ## Phase 6: Remaining 2D styles
 - [ ] Ink panorama, Watercolor, Retro poster, Blueprint, Synthwave
 
@@ -79,4 +89,17 @@ The horizon shape and the direction of major peaks should match.
 - [ ] Optional later: satellite imagery draped on the terrain, only if a free source with a compatible license is found (check the license first)
 
 ## Later (to discuss once Phases 1–7 are done)
-- [ ] **Camping spot finder:** suggest somewhat flat spots, large enough for a small 2-person tent, on or next to a trail. Local camping laws are out of scope for a first version. Open questions: slope threshold and minimum flat area, resolution needed (the elevation data is ~5–30 m per pixel, which may be too coarse for a tent pitch), trail data from OSM (`highway=path|footway|track`), and how to present results on the map.
+## Camping spot finder (needs examination and planning first)
+Find suitable places to camp in the wild: flat enough for a small 2-person tent, on or near a trail. This is not scheduled. It starts with an examination phase whose result decides whether and how to build it; nothing below is implemented before that decision.
+
+**Where it lives (recommendation, to confirm after the examination):** start as a separate module in this repo (`src/camping/`, own entry point and map mode), reusing `geo/`, `terrain/` (the `ElevationSource` and tile cache), the map picker and the horizon engine. The panorama app stays focused. If the finder grows its own UX, data layers and legal content, split it into a second app in a workspace, sharing `geo/` and `terrain/` as packages. The strongest reason to stay close is the overlap: "will I get the sunrise from this spot?" and "what does the view look like?" are exactly what the horizon engine and the sun path answer.
+
+**Examination (a spike, roughly one to two sessions):**
+- [ ] **Terrain resolution.** Terrarium tiles reach z15 (about 5 m per pixel at the equator) but the underlying data is 10-30 m, so a tent pitch (about 3 x 3 m of gentle slope) is below what it can resolve. Measure it: compute slope statistics on known campsites (OSM `tourism=camp_site`, `camp_pitch`, known wild spots) against random terrain, and see whether slope alone separates them. Compare with national high-resolution open DEMs (e.g. swissALTI3D, IGN RGE ALTI, USGS 3DEP, 1-10 m) to quantify what is lost with a global source. Any regional source breaks "worldwide" and must stay optional, behind the `ElevationSource` interface.
+- [ ] **Candidate criteria** and how to score them: slope (threshold and minimum contiguous flat area), distance to a trail (OSM `highway=path|footway|track`, 5-300 m), water nearby (`natural=water`, `waterway=*`, but not in a drainage bottom or a flood plain), exposure (wind, from topographic openness computed with the horizon code), and terrain hazards (below steep slopes and gullies: rockfall, avalanche runout, snow-covered ground above the snowline).
+- [ ] **Views and light.** Sunrise and sunset visibility from the spot (depends on the sun path phase and the horizon engine), and view quality (openness, distance to the horizon).
+- [ ] **Legal and safety data.** Local wild-camping law differs by country and even by valley, and it is out of scope to decide. Investigate what is freely available to at least flag conflicts (OSM `boundary=protected_area`, `leisure=nature_reserve`, `access=private`, `tourism=camp_site` nearby) and how to word a clear, honest disclaimer. The app must never present a spot as legal or safe.
+- [ ] **Compute budget.** Area analysis reads many more tiles than a panorama. Estimate tiles and time for a 5 km and a 20 km search area on a mid-range phone, and decide the cell size, the worker split and the caching.
+- [ ] **Presentation.** Heatmap layer on the map, ranked list of candidate spots with a why (slope, trail distance, sunrise), and "show the view from here" opening the panorama for that spot.
+- [ ] **Deliverable:** a short write-up in `docs/` with the measurements, the chosen approach or a no-go, a phase breakdown with acceptance criteria, and the app-or-module decision.
+
