@@ -59,7 +59,8 @@ interface PanoramaScene {
   horizonAngle: Float32Array; // outermost visible angle per ray
   horizonDist: Float32Array;  // distance of that outermost visible crest per ray
   ridgelines: Ridgeline[];    // all visible crests, linked across rays
-  sea: { offsets: Uint32Array; lo: Float32Array; hi: Float32Array }; // visible open-sea angle intervals per ray
+  sea: { offsets: Uint32Array; lo: Float32Array; hi: Float32Array;   // visible open-sea angle intervals per ray
+         loDist: Float32Array; hiDist: Float32Array };                // near/far distance of each interval
 }
 interface ViewTransform {
   width: number; height: number;
@@ -72,10 +73,15 @@ interface ViewTransform {
 }
 interface PanoramaStyle {
   id: string; name: string;
-  paper: string;              // background outside the rendered content
+  paper(opts): string;         // sky above the rendered content
+  ground(opts): string;        // ground below the rendered content
+  uses: ('snowline' | 'palette')[]; // options it reacts to (cache keys, thumbnails)
   render(ctx: CanvasRenderingContext2D, scene: PanoramaScene, view: ViewTransform,
-         opts: { labels: LabeledPeak[] | null; seed: number }): void;
+         opts: { seed: number; snowlineM: number; palette: 'dawn' | 'day' | 'dusk';
+                 labels?: LabeledPeak[] | null /* Phase 3 */ }): void;
 }
+// Styles may be asked to draw any slice (the viewer renders tiles): derive all geometry
+// and randomness from absolute azimuth/angle so adjacent tiles and the 0°/360° seam agree.
 ```
 
 ## Core math (keep in `geo/` and `horizon/`, with unit tests)

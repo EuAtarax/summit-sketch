@@ -34,10 +34,10 @@ The horizon shape and the direction of major peaks should match.
 **Performance targets:** 200 km in < 10 s on desktop and < 30 s on a mid-range phone; peak memory < 300 MB.
 
 ## Phase 2: Style system + first styles
-- [ ] `ViewTransform` (cylindrical projection, wrap-around, vertical exaggeration 1–3×, default auto-fit)
-- [ ] Style registry and a style picker with live thumbnails
-- [ ] Shared utilities: seeded RNG, 1D noise, a "wobbly stroke" brush, depth bands (log-scale by distance), snowline helper
-- [ ] Styles: **Pencil sketch**, **Misty layers**, **Cartoon** (see STYLES.md)
+- [x] `ViewTransform` (cylindrical projection, wrap-around, vertical exaggeration 1–3×, default auto-fit)
+- [x] Style registry and a style picker with live thumbnails
+- [x] Shared utilities: seeded RNG, 1D noise, a "wobbly stroke" brush, depth bands (log-scale by distance), snowline helper
+- [x] Styles: **Pencil sketch**, **Misty layers**, **Cartoon** (see STYLES.md)
 
 **Done when:** switching styles is instant (< 200 ms) with no recompute.
 
