@@ -12,7 +12,7 @@ export default defineConfig({
   build: {
     target: 'es2022',
     rollupOptions: {
-      input: { main: 'index.html', spike: 'spike.html' },
+      input: { main: 'index.html', spike: 'spike.html', camping: 'camping.html' },
     },
   },
   plugins: [
@@ -44,8 +44,10 @@ export default defineConfig({
       workbox: {
         // The app shell works offline; the debug spike page is not part of the app.
         globPatterns: ['**/*.{js,css,html,woff2,svg,png}'],
-        globIgnores: ['**/spike*'],
+        globIgnores: ['**/spike*', '**/camping*'],
         navigateFallback: `${base}index.html`,
+        // Development pages that are not part of the installed app keep their own documents.
+        navigateFallbackDenylist: [/\/spike\.html$/, /\/camping\.html$/],
         runtimeCaching: [
           {
             // Elevation tiles never change for a given URL, so serve them from the cache first.
