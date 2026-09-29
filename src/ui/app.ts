@@ -81,6 +81,12 @@ export function mountApp(root: HTMLElement): void {
     picker.setBaseLayer(id);
     saveMapLayer(id);
   });
+  // The camping finder is the landing page of the site.
+  const home = document.createElement('a');
+  home.href = './';
+  home.className = 'layer-button home-link';
+  home.textContent = 'Camping';
+  topBar.append(home);
   const sheet = createSummitSheet(root, {
     onShowView: () => void showView(),
     onClose: () => {

@@ -129,6 +129,9 @@ Bring routes into the app, all client-side (no upload, no account).
 - [ ] **Export:** the current selection or a drawn route as GPX, and the GPX overlay in exported images.
 - [ ] Open questions: file size limits on phones, how to mark hidden stretches of a track, whether routes can be drawn in the app, and privacy wording (data never leaves the device).
 
+## Current focus (decided)
+The camping spot finder for Switzerland is the focus and the landing page of the site (`index.html`); the panorama app moved to `panorama.html`. The other phases below stay as backlog. Order of work: finish the camping examination (S3-S6), then make it solid on phones, then GPX and paths, then return to the panorama backlog (shaded relief, sun path).
+
 ## Camping spot finder (needs examination and planning first)
 Find suitable places to camp in the wild: flat enough for a small 2-person tent, near a trail, with water and a good morning sun. Nothing here is built before the spike below.
 
@@ -172,6 +175,16 @@ Find suitable places to camp in the wild: flat enough for a small 2-person tent,
 - **Suitability in the test area** (Leuggelenstock and Ijenstock): only 1.2 % of cells (0.3 % with vegetation) fit a pitch. The area is mostly steep grass flanks and forest, so this is plausible, and the few candidates sit on the flat basins. The thresholds are a first guess and are not calibrated.
 - **Roughness at 2 m** shows terraces and animal tracks on steep flanks as stripes and speckles even on meadow, so it separates smooth from very rough ground only coarsely. Boulders and scree need the 0.5 m terrain model, which the refinement step (a 100 x 100 m window around top candidates) should use. Calibrating the slope, roughness and vegetation thresholds is part of S5.
 - **Other places to test:** a busier alpine valley with known bivouac spots (to check that real spots score well), and a flat alpine plateau.
+
+**Landing page, first version (done):**
+- Click (tap) a spot on the map to choose it; the analysis box is drawn and the analysis starts. Below zoom 12 a tap zooms in first. No need to move the map.
+- The analysis runs in a Web Worker (about 1-1.5 s for 2 x 2 km, 3 s for 4 x 4 km); moving a slider re-scores instantly from the stored grids without a download.
+- Options, all remembered: area size (0.5, 1, 2, 4 km), heatmap layer (suitability, slope, roughness, vegetation height, lakes and flat surfaces), colours (Green, Traffic light, Viridis, Magma, Blue), opacity, base map (national map, aerial image), overlays (hiking trails; wildlife quiet zones, game reserves, National Park, bird reserves, floodplains, moorland, bogs, fens, nature parks, as map layers from geo.admin.ch), and the pitch model.
+- **Tune the pitch:** comfortable slope (default 5 degrees), steepest slope (10), bumpiness tolerance (0.3 m), tallest vegetation (3 m), flat patch around the spot (1 cell = 6 m), each with a short explanation and the recommended value, plus "Use recommended values".
+- **Lakes are ruled out** (toggle, on by default): they are perfectly flat in the terrain model. Detection: a cell whose 10 m neighbourhood varies by less than 2 cm. Paved and levelled areas are caught too. A "Lakes and flat surfaces" layer shows what was excluded.
+- Search (Nominatim, Switzerland only), "Use my location", and shareable links (`?lat=&lon=`); "See the panorama from here" opens `panorama.html` for the spot.
+- On phones the panel folds away after an analysis and a chip at the bottom keeps the result and the legend in sight.
+- Note: the overlays are visual map layers. Flagging each candidate spot by its protected areas (S4, through `identify`) is still to do; the layer for Swiss trail closures does not exist in the WMTS list, so it is not offered.
 
 - [ ] S3: trails, water and drinking water from OSM, with the trail-distance and water-distance rasters.
 - [ ] S4: protected-area flags from the BAFU layers with season awareness.

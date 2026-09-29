@@ -4,6 +4,7 @@ import '@fontsource/barlow-condensed/500.css';
 import '@fontsource/barlow-condensed/600.css';
 import '@fontsource/barlow-condensed/700.css';
 import './styles.css';
+import './ui/search.css';
 import { mountApp } from './ui/app';
 
 const root = document.getElementById('app');

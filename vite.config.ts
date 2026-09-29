@@ -12,7 +12,14 @@ export default defineConfig({
   build: {
     target: 'es2022',
     rollupOptions: {
-      input: { main: 'index.html', spike: 'spike.html', camping: 'camping.html' },
+      // index.html is the camping finder (the landing page); the panorama app lives at
+      // panorama.html; camping.html only redirects old links to the landing page.
+      input: {
+        main: 'index.html',
+        panorama: 'panorama.html',
+        spike: 'spike.html',
+        camping: 'camping.html',
+      },
     },
   },
   plugins: [
@@ -24,7 +31,7 @@ export default defineConfig({
         name: 'Summit Sketch',
         short_name: 'Summit Sketch',
         description:
-          'Pick a summit anywhere on Earth and see a stylized 360° panorama of everything visible from it.',
+          'Find flat, quiet places to camp in Switzerland, and see the 360° panorama from any summit.',
         theme_color: '#1F2A33',
         background_color: '#F4F6F7',
         display: 'standalone',
@@ -44,10 +51,10 @@ export default defineConfig({
       workbox: {
         // The app shell works offline; the debug spike page is not part of the app.
         globPatterns: ['**/*.{js,css,html,woff2,svg,png}'],
-        globIgnores: ['**/spike*', '**/camping*'],
+        globIgnores: ['**/spike*', '**/camping.html'],
         navigateFallback: `${base}index.html`,
-        // Development pages that are not part of the installed app keep their own documents.
-        navigateFallbackDenylist: [/\/spike\.html$/, /\/camping\.html$/],
+        // Pages with their own document must not be answered with the landing page.
+        navigateFallbackDenylist: [/\/spike\.html$/, /\/camping\.html$/, /\/panorama\.html$/],
         runtimeCaching: [
           {
             // Elevation tiles never change for a given URL, so serve them from the cache first.

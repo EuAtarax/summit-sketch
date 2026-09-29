@@ -31,7 +31,8 @@ interface NominatimItem {
 
 export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
 
-export function buildSearchUrl(query: string, language: string): string {
+/** `countryCodes` (e.g. "ch") limits results to those countries, which suits a national map. */
+export function buildSearchUrl(query: string, language: string, countryCodes?: string): string {
   const params = new URLSearchParams({
     format: 'jsonv2',
     q: query,
@@ -39,6 +40,7 @@ export function buildSearchUrl(query: string, language: string): string {
     'accept-language': language,
     dedupe: '1',
   });
+  if (countryCodes) params.set('countrycodes', countryCodes);
   return `${NOMINATIM_URL}?${params}`;
 }
 
@@ -81,6 +83,7 @@ export class NominatimClient {
     private readonly fetchFn: FetchFn = (url, init) => fetch(url, init),
     private readonly minGapMs = MIN_REQUEST_GAP_MS,
     private readonly language = navigator.language || 'en',
+    private readonly countryCodes?: string,
   ) {}
 
   async search(rawQuery: string): Promise<PlaceResult[]> {
@@ -96,7 +99,7 @@ export class NominatimClient {
     if (wait > 0) await sleep(wait, controller.signal);
     this.lastRequestAt = Date.now();
 
-    const res = await this.fetchFn(buildSearchUrl(query, this.language), {
+    const res = await this.fetchFn(buildSearchUrl(query, this.language, this.countryCodes), {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(TIMEOUT_MS)]),
     });

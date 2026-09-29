@@ -1,7 +1,9 @@
 :root {
   --snow: #f4f6f7;
   --ink: #1f2a33;
+  --stone: #8a9199;
   --trail-red: #c8102e;
+  --hairline: color-mix(in srgb, var(--stone) 40%, transparent);
   font-family: 'Atkinson Hyperlegible', system-ui, sans-serif;
   color: var(--ink);
 }
@@ -16,77 +18,242 @@ body,
 #map {
   position: absolute;
   inset: 0;
+  background: #dfe5e8;
 }
 
-/* Crosshair at the center of the map: the middle of the analysis window. */
-#map::after {
-  content: '';
+#map .leaflet-control-attribution {
+  font-size: 11px;
+}
+
+/* Top row: search on the left, room for the Options button on the right. */
+.map-top {
   position: absolute;
-  z-index: 500;
-  left: 50%;
-  top: 50%;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
-  border: 2px solid var(--trail-red);
-  border-radius: 50%;
+  z-index: 1000;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
   pointer-events: none;
-  box-sizing: border-box;
 }
 
+.map-top > * {
+  pointer-events: auto;
+}
+
+/* On wide screens the panel is a column on the left below the search; on phones a sheet. */
 .panel {
   position: absolute;
   z-index: 1000;
-  top: 12px;
+  top: calc(max(12px, env(safe-area-inset-top)) + 56px);
   left: 12px;
-  width: min(340px, calc(100vw - 24px));
+  width: 340px;
+  max-height: calc(100% - 140px);
+  overflow-y: auto;
   display: grid;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: rgb(244 246 247 / 0.96);
-  box-shadow: 0 1px 8px rgb(31 42 51 / 0.35);
-  font-size: 0.875rem;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgb(244 246 247 / 0.97);
+  box-shadow: 0 1px 10px rgb(31 42 51 / 0.35);
+  font-size: 0.9375rem;
+}
+
+.panel[hidden] {
+  display: none;
 }
 
 .panel h1 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1.2rem;
 }
 
 .panel p {
   margin: 0;
 }
 
-.panel .hint {
+.tagline {
   color: #56606a;
 }
 
-.panel label {
+.status {
+  font-weight: 700;
+}
+
+.legend-bar {
+  height: 12px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+
+.legend-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: #56606a;
+}
+
+.panel details {
+  display: grid;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.panel summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.panel details[open] > summary {
+  margin-bottom: -6px;
+}
+
+.field,
+.slider {
   display: grid;
   gap: 4px;
 }
 
-.panel .check {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
+.field small,
+.slider small,
+.check small {
+  display: block;
+  color: #56606a;
+  font-size: 0.78rem;
+  line-height: 1.3;
 }
 
-.panel select,
-.panel button {
+.slider-head {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+}
+
+.slider input[type='range'],
+.field input[type='range'] {
+  width: 100%;
+  min-height: 32px;
+}
+
+.field select {
   min-height: 44px;
   font: inherit;
 }
 
-.panel button {
+.check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 32px;
+}
+
+.check input {
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  flex: none;
+}
+
+.overlay-group {
+  margin: 0;
+  padding: 0;
   border: 0;
-  border-radius: 8px;
-  background: var(--trail-red);
-  color: var(--snow);
+  display: grid;
+  gap: 8px;
+}
+
+.overlay-group legend {
+  padding: 0 0 4px;
   font-weight: 700;
 }
 
-.panel button:disabled {
-  opacity: 0.6;
+.button {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button[hidden] {
+  display: none;
+}
+
+.panel-toggle {
+  order: 2;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: rgb(244 246 247 / 0.96);
+  box-shadow: 0 1px 6px rgb(31 42 51 / 0.3);
+  font: inherit;
+  font-weight: 700;
+  position: absolute;
+  z-index: 1001;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+}
+
+.status-chip {
+  position: absolute;
+  z-index: 1000;
+  left: 8px;
+  right: 64px; /* leaves room for the zoom buttons */
+  bottom: calc(28px + env(safe-area-inset-bottom));
+  display: grid;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: rgb(244 246 247 / 0.97);
+  box-shadow: 0 1px 8px rgb(31 42 51 / 0.35);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.status-chip[hidden] {
+  display: none;
+}
+
+/* On wide screens the panel stays open; the chip only appears when it is closed. */
+@media (min-width: 641px) {
+  .status-chip {
+    left: 12px;
+    right: auto;
+    width: 340px;
+  }
+}
+
+/* The search field leaves room for the Options button. */
+.map-top .search {
+  margin-right: 92px;
+}
+
+@media (max-width: 640px) {
+  .panel {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    top: auto;
+    bottom: 8px;
+    max-height: 62%;
+  }
 }

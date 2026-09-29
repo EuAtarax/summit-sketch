@@ -58,6 +58,12 @@ describe('buildSearchUrl', () => {
     expect(url.searchParams.get('limit')).toBe('6');
     expect(url.searchParams.get('accept-language')).toBe('de');
     expect(url.searchParams.get('format')).toBe('jsonv2');
+    expect(url.searchParams.has('countrycodes')).toBe(false);
+  });
+
+  it('can limit results to a country', () => {
+    const url = new URL(buildSearchUrl('Glarus', 'de', 'ch'));
+    expect(url.searchParams.get('countrycodes')).toBe('ch');
   });
 });
 

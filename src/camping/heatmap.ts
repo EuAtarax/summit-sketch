@@ -1,85 +1,90 @@
 import { lv95ToWgs84, wgs84ToLv95 } from './lv95';
-import type { GridWindow } from './terrain';
+import { paletteColor, type PaletteId } from './palettes';
+import type { GridGeometry } from './terrain';
 
 export type Rgba = readonly [number, number, number, number];
 
-export interface RampStop {
-  at: number;
-  color: Rgba;
+export type LayerId = 'suitability' | 'slope' | 'roughness' | 'canopy' | 'water';
+
+interface LayerDef {
+  label: string;
+  /** A layer with one meaning (water) keeps its own color whatever palette is chosen. */
+  fixedColor?: readonly [number, number, number];
+  /** How good a value is for a tent, 0 (worst) to 1 (best); the palette is applied to this. */
+  goodness: (value: number) => number;
+  /** Opacity 0..255 for a cell: unsuitable cells of the main layer are left transparent. */
+  alpha: (goodness: number, value: number) => number;
+  /** Legend captions for the two ends of the palette. */
+  worst: string;
+  best: string;
 }
 
-/** Piecewise-linear color for a value; NaN (no data) is fully transparent. */
-export function sampleRamp(stops: readonly RampStop[], value: number): Rgba {
-  if (Number.isNaN(value)) return [0, 0, 0, 0];
-  const first = stops[0]!;
-  const last = stops[stops.length - 1]!;
-  if (value <= first.at) return first.color;
-  if (value >= last.at) return last.color;
-  for (let i = 1; i < stops.length; i++) {
-    const b = stops[i]!;
-    if (value <= b.at) {
-      const a = stops[i - 1]!;
-      const t = (value - a.at) / (b.at - a.at);
-      return a.color.map((c, k) => c + (b.color[k]! - c) * t) as unknown as Rgba;
-    }
-  }
-  return last.color;
-}
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
-export type LayerId = 'suitability' | 'slope' | 'roughness' | 'canopy';
-
-export const LAYERS: Record<
-  LayerId,
-  { label: string; unit: string; max: number; stops: RampStop[] }
-> = {
+export const LAYERS: Record<LayerId, LayerDef> = {
   suitability: {
     label: 'Pitch suitability',
-    unit: '',
-    max: 1,
-    stops: [
-      { at: 0, color: [0, 0, 0, 0] },
-      { at: 0.05, color: [230, 200, 40, 0] },
-      { at: 0.3, color: [230, 200, 40, 110] },
-      { at: 0.7, color: [110, 200, 60, 170] },
-      { at: 1, color: [20, 160, 60, 210] },
-    ],
+    goodness: (v) => clamp01(v),
+    alpha: (g) => (g < 0.05 ? 0 : 90 + 125 * g),
+    worst: 'poor',
+    best: 'good pitch',
   },
   slope: {
     label: 'Slope',
-    unit: '°',
-    max: 45,
-    stops: [
-      { at: 0, color: [40, 150, 60, 150] },
-      { at: 5, color: [150, 200, 60, 150] },
-      { at: 10, color: [240, 200, 40, 160] },
-      { at: 20, color: [230, 120, 30, 170] },
-      { at: 35, color: [190, 30, 40, 190] },
-      { at: 50, color: [90, 20, 60, 200] },
-    ],
+    goodness: (v) => 1 - clamp01((v - 5) / 30),
+    alpha: () => 165,
+    worst: '35° or steeper',
+    best: '5° or flatter',
   },
   roughness: {
     label: 'Roughness (6 m)',
-    unit: ' m',
-    max: 0.6,
-    stops: [
-      { at: 0, color: [40, 150, 60, 130] },
-      { at: 0.08, color: [150, 200, 60, 150] },
-      { at: 0.3, color: [230, 120, 30, 180] },
-      { at: 0.6, color: [150, 20, 40, 200] },
-    ],
+    goodness: (v) => 1 - clamp01((v - 0.08) / 0.4),
+    alpha: () => 165,
+    worst: '0.5 m or rougher',
+    best: 'smooth',
   },
   canopy: {
     label: 'Vegetation and object height',
-    unit: ' m',
-    max: 15,
-    stops: [
-      { at: 0, color: [0, 0, 0, 0] },
-      { at: 0.5, color: [170, 220, 120, 90] },
-      { at: 3, color: [60, 150, 60, 170] },
-      { at: 15, color: [10, 70, 40, 220] },
-    ],
+    goodness: (v) => 1 - clamp01(v / 12),
+    alpha: (_g, v) => (v < 0.3 ? 0 : 170),
+    worst: '12 m or taller',
+    best: 'open ground',
+  },
+  water: {
+    label: 'Lakes and flat surfaces',
+    fixedColor: [30, 110, 200],
+    goodness: () => 0,
+    alpha: (_g, v) => (v === 1 ? 170 : 0),
+    worst: 'lake or level surface',
+    best: 'not flat',
   },
 };
+
+/** Value to RGBA for a layer and palette; missing data (NaN) is fully transparent. */
+export function makeColorizer(layer: LayerId, palette: PaletteId): (value: number) => Rgba {
+  const def = LAYERS[layer];
+  return (value) => {
+    if (Number.isNaN(value)) return [0, 0, 0, 0];
+    const g = def.goodness(value);
+    const [r, gr, b] = def.fixedColor ?? paletteColor(palette, g);
+    return [r, gr, b, def.alpha(g, value)];
+  };
+}
+
+/** The four corners of a window (north-west first, clockwise) as [lat, lon] pairs. */
+export function windowCorners(geometry: GridGeometry): [number, number][] {
+  const w = geometry.width * geometry.cell;
+  const h = geometry.height * geometry.cell;
+  return [
+    [geometry.e0, geometry.n0],
+    [geometry.e0 + w, geometry.n0],
+    [geometry.e0 + w, geometry.n0 - h],
+    [geometry.e0, geometry.n0 - h],
+  ].map(([e, n]) => {
+    const p = lv95ToWgs84(e!, n!);
+    return [p.lat, p.lon] as [number, number];
+  });
+}
 
 export interface Overlay {
   canvas: HTMLCanvasElement;
@@ -95,21 +100,15 @@ const MAX_OVERLAY_PX = 1200;
  * so each output pixel is looked up in the grid rather than drawing the grid as an image.
  */
 export function renderOverlay(
-  grid: GridWindow,
+  grid: GridGeometry,
   values: Float32Array,
-  stops: readonly RampStop[],
+  colorOf: (value: number) => Rgba,
 ): Overlay {
-  const sizeM = grid.width * grid.cell;
-  const corners = [
-    lv95ToWgs84(grid.e0, grid.n0),
-    lv95ToWgs84(grid.e0 + sizeM, grid.n0),
-    lv95ToWgs84(grid.e0, grid.n0 - grid.height * grid.cell),
-    lv95ToWgs84(grid.e0 + sizeM, grid.n0 - grid.height * grid.cell),
-  ];
-  const south = Math.min(...corners.map((c) => c.lat));
-  const north = Math.max(...corners.map((c) => c.lat));
-  const west = Math.min(...corners.map((c) => c.lon));
-  const east = Math.max(...corners.map((c) => c.lon));
+  const corners = windowCorners(grid);
+  const south = Math.min(...corners.map((c) => c[0]));
+  const north = Math.max(...corners.map((c) => c[0]));
+  const west = Math.min(...corners.map((c) => c[1]));
+  const east = Math.max(...corners.map((c) => c[1]));
   const metersPerLon = 111_320 * Math.cos(((south + north) / 2) * (Math.PI / 180));
   const aspect = ((east - west) * metersPerLon) / ((north - south) * 111_200);
   const width = aspect >= 1 ? MAX_OVERLAY_PX : Math.round(MAX_OVERLAY_PX * aspect);
@@ -128,7 +127,7 @@ export function renderOverlay(
       const col = Math.floor((p.e - grid.e0) / grid.cell);
       const row = Math.floor((grid.n0 - p.n) / grid.cell);
       if (col < 0 || row < 0 || col >= grid.width || row >= grid.height) continue;
-      const [r, g, b, a] = sampleRamp(stops, values[row * grid.width + col]!);
+      const [r, g, b, a] = colorOf(values[row * grid.width + col]!);
       const at = (py * width + px) * 4;
       image.data[at] = r;
       image.data[at + 1] = g;

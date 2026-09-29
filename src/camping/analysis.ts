@@ -116,19 +116,74 @@ const smoothstep = (edge0: number, edge1: number, v: number): number => {
   return t * t * (3 - 2 * t);
 };
 
-/** Thresholds of the suitability model (documented in docs/PLAN.md, camping finder). */
-export const SUITABILITY = {
+/**
+ * Thresholds of the suitability model. Each criterion is fully fine up to its "ok" value,
+ * ruled out from its "max" value, and fades smoothly in between.
+ */
+export interface SuitabilityParams {
   /** Slope up to this is fully fine for a tent, degrees. */
-  slopeOkDeg: 5,
+  slopeOkDeg: number;
   /** Slope from this on is unusable, degrees. */
-  slopeMaxDeg: 10,
+  slopeMaxDeg: number;
   /** Roughness up to this is smooth ground, meters (RMS over a 6 m window at 2 m cells). */
+  roughOkM: number;
+  /** Roughness from this on is unusable (boulders, tussocks), meters. */
+  roughMaxM: number;
+  /** Vegetation or objects up to this height are fine (grass), meters. */
+  canopyOkM: number;
+  /** Vegetation from this height on is unusable (shrubs, forest), meters. */
+  canopyMaxM: number;
+  /** A pitch needs good ground this many cells around it (0 = one cell, 1 = 3 x 3 cells). */
+  patchRadiusCells: number;
+  /** Rule out lakes and other perfectly flat surfaces (see flatSurfaceMask). */
+  excludeWater: boolean;
+}
+
+/** Recommended defaults (see the explanations in the settings panel). */
+export const DEFAULT_SUITABILITY: SuitabilityParams = {
+  slopeOkDeg: 5,
+  slopeMaxDeg: 10,
   roughOkM: 0.08,
   roughMaxM: 0.3,
-  /** Vegetation or objects up to this height are fine (grass), meters. */
   canopyOkM: 0.5,
   canopyMaxM: 3,
-} as const;
+  patchRadiusCells: 1,
+  excludeWater: true,
+};
+
+/**
+ * Lakes are the flattest thing in an elevation model: the surface is set to one constant
+ * height, while real ground (even a pasture) varies by centimeters over ten meters. A cell is
+ * marked (1) when the whole (2r+1) x (2r+1) neighbourhood varies by less than `maxRangeM`;
+ * everything else is 0, and cells without data or near the border are NaN. Paved and
+ * levelled areas are caught too, which is fine: nobody wants to pitch a tent there.
+ */
+export function flatSurfaceMask(
+  z: Float32Array,
+  width: number,
+  height: number,
+  radius = 2,
+  maxRangeM = 0.02,
+): Float32Array {
+  const out = new Float32Array(width * height).fill(Number.NaN);
+  for (let y = radius; y < height - radius; y++) {
+    for (let x = radius; x < width - radius; x++) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let dy = -radius; dy <= radius && hi - lo < maxRangeM * 4; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const v = z[(y + dy) * width + x + dx]!;
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+      }
+      // NaN never updates lo/hi, so a window with holes only counts if the rest is flat.
+      const hasHole = Number.isNaN(z[y * width + x]!);
+      out[y * width + x] = hasHole ? Number.NaN : hi - lo < maxRangeM ? 1 : 0;
+    }
+  }
+  return out;
+}
 
 /**
  * Pitch suitability 0..1 per cell: gentle slope, smooth ground and (when known) no tall
@@ -138,12 +193,17 @@ export function pitchSuitability(
   slope: Float32Array,
   rough: Float32Array,
   canopy?: Float32Array,
+  s: SuitabilityParams = DEFAULT_SUITABILITY,
+  water?: Float32Array,
 ): Float32Array {
-  const s = SUITABILITY;
   const out = new Float32Array(slope.length);
   for (let i = 0; i < out.length; i++) {
     if (Number.isNaN(slope[i]!) || Number.isNaN(rough[i]!)) {
       out[i] = Number.NaN;
+      continue;
+    }
+    if (s.excludeWater && water && water[i] === 1) {
+      out[i] = 0;
       continue;
     }
     let v =
