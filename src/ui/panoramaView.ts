@@ -10,7 +10,7 @@ import {
   renderExport,
 } from '../render/exportImage';
 import { ATTRIBUTION_TEXT, createAttributionFooter } from './attribution';
-import { deliverImage, exportFilename } from './deliver';
+import { deliverImage, exportFilename, shareLink } from './deliver';
 import { createExportSheet, type ExportKind } from './exportSheet';
 import { formatBearing, formatCoords, formatDistance, formatSeconds } from './format';
 import { mountPanoramaCanvas, type PanoramaCanvas } from './panoramaCanvas';
@@ -55,12 +55,20 @@ export function createPanoramaView(
   back.setAttribute('aria-label', 'Back to the map');
   back.textContent = '←';
   back.onclick = onBack;
+  const linkButton = document.createElement('button');
+  linkButton.type = 'button';
+  linkButton.className = 'icon-button link-button';
+  linkButton.setAttribute('aria-label', 'Share link to this panorama');
+  linkButton.textContent = 'Link';
+  const linkNote = document.createElement('span');
+  linkNote.className = 'link-note';
+  linkNote.setAttribute('role', 'status');
   const titles = document.createElement('div');
   titles.className = 'viewer-titles';
   const title = document.createElement('h2');
   const subtitle = document.createElement('p');
   titles.append(title, subtitle);
-  bar.append(back, titles);
+  bar.append(back, titles, linkNote, linkButton);
 
   const stage = document.createElement('div');
   stage.className = 'viewer-stage';
@@ -155,6 +163,20 @@ export function createPanoramaView(
       ] as const,
     };
   }
+
+  linkButton.onclick = async () => {
+    const note = (text: string) => {
+      linkNote.textContent = text;
+      setTimeout(() => (linkNote.textContent = ''), 2500);
+    };
+    try {
+      const result = await shareLink(location.href, title.textContent ?? 'Summit Sketch');
+      if (result === 'copied') note('Link copied');
+    } catch (err) {
+      console.error(err);
+      note("Couldn't copy the link");
+    }
+  };
 
   let exportRun: AbortController | null = null;
 

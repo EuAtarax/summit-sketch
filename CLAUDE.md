@@ -31,7 +31,7 @@ Keep dependencies minimal. Ask before adding any dependency larger than ~50 kB g
 | Elevation | AWS Terrain Tiles, Terrarium format: `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png` | 256 px tiles, max zoom 15, global. Decode: `elev_m = (R*256 + G + B/256) - 32768`. Attribution per the tilezen/joerd attribution docs. **Verify availability + CORS in Phase 1 before building on it.** Keep the source behind an interface so it can be swapped. |
 | Peak names | OSM via Overpass API (`https://overpass-api.de/api/interpreter`) | Query only `node["natural"="peak"]["name"]`. Shared public server: one request per panorama, cache results, back off on 429. |
 | Place search | Nominatim | Max 1 request/s. Search on submit only, never on each keystroke. |
-| Map picker tiles | OpenStreetMap standard tiles | Light use with attribution is fine. Keep the provider configurable. |
+| Map picker tiles | OpenStreetMap standard tiles, OpenTopoMap (terrain), EOX Sentinel-2 cloudless (satellite) | Light use with attribution is fine. Providers live in `ui/mapConfig.ts`. EOX is CC BY-NC-SA 4.0: the app must stay non-commercial. |
 
 Attribution line (app footer and exports): "Elevation: Terrain Tiles (Mapzen/AWS, see sources) · Map data © OpenStreetMap contributors".
 
