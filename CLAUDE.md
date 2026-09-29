@@ -1,6 +1,9 @@
 # Summit Sketch (working name)
 
-A free, mobile-first browser app (PWA). The user picks a summit anywhere on Earth and gets a stylized 360° panorama of everything visible from there. The panorama supports several visual styles, optional peak labels, and export as an image.
+A free, mobile-first browser app (PWA) with two tools.
+
+- **Camping spot finder (the landing page, `index.html`, Switzerland only for now).** The user taps a spot on a swisstopo map and gets a heatmap of pitchable ground from 2 m terrain data, with tunable thresholds, hiking trails and protected-area overlays. Code in `src/camping/`. This is the current focus.
+- **Panorama (`panorama.html`, worldwide).** The user picks a summit anywhere on Earth and gets a stylized 360° panorama of everything visible from there, with several visual styles, optional peak labels, and export as an image.
 
 Read `docs/PLAN.md` (phases and acceptance criteria) and `docs/STYLES.md` (style specs) before starting any phase.
 
@@ -9,7 +12,7 @@ Read `docs/PLAN.md` (phases and acceptance criteria) and `docs/STYLES.md` (style
 - **Free to run.** The app is static hosting only: no backend, no API keys, and no services that need a billing account. Do not use Google Maps, Google 3D Tiles, Mapbox, or anything with paid tiers.
 - **All computation happens client-side**, in the user's browser.
 - **Mobile-first.** The app must stay responsive on a mid-range phone. Heavy work runs in Web Workers, and the main thread never blocks for more than ~50 ms.
-- **Worldwide coverage.** Never hardcode anything to the Alps.
+- **Worldwide coverage for the panorama.** Never hardcode anything to the Alps there. The camping finder is Switzerland-only on purpose (it needs swisstopo's 2 m terrain and BAFU data); keep its data providers behind interfaces so other countries can follow.
 - **Respect data providers.** Follow their usage policies, cache aggressively, and show attribution in the app and on every exported image.
 
 ## Stack
@@ -32,7 +35,7 @@ Keep dependencies minimal. Ask before adding any dependency larger than ~50 kB g
 | Peak names | OSM via Overpass API (`https://overpass-api.de/api/interpreter`) | Query only `node["natural"="peak"]["name"]`. Shared public server: one request per panorama, cache results, back off on 429. |
 | Place search | Nominatim | Max 1 request/s. Search on submit only, never on each keystroke. |
 | Map picker tiles | OpenStreetMap standard tiles, OpenTopoMap (terrain), EOX Sentinel-2 cloudless (satellite) | Light use with attribution is fine. Providers live in `ui/mapConfig.ts`. EOX is CC BY-NC-SA 4.0: the app must stay non-commercial. |
-| Swiss terrain and maps (camping spike, Switzerland only) | swisstopo: swissALTI3D and swissSURFACE3D Cloud-Optimized GeoTIFFs via the STAC API (`data.geo.admin.ch`), WMTS tiles (`wmts.geo.admin.ch`), BAFU layers via `api3.geo.admin.ch` | Open Government Data: free including commercial use, source "© swisstopo" required. All CORS-open. Read with range requests or whole small files, in LV95 (`camping/lv95.ts`). |
+| Swiss terrain and maps (camping finder, Switzerland only) | swisstopo: swissALTI3D and swissSURFACE3D Cloud-Optimized GeoTIFFs via the STAC API (`data.geo.admin.ch`), WMTS tiles (`wmts.geo.admin.ch`), BAFU layers via `api3.geo.admin.ch` | Open Government Data: free including commercial use, source "© swisstopo" required. All CORS-open. Read with range requests or whole small files, in LV95 (`camping/lv95.ts`). |
 
 Attribution line (app footer and exports): "Elevation: Terrain Tiles (Mapzen/AWS, see sources) · Map data © OpenStreetMap contributors".
 
@@ -46,7 +49,12 @@ src/
   peaks/      Overpass fetch (one query per panorama), peak visibility, ranking
   render/     ViewTransform (projection), style registry, styles/*, shared noise/brush utils
   ui/         map picker, summit sheet, panorama viewer, style picker, export
+  search/     Nominatim client (submit-only, throttled)
+  camping/    Switzerland camping finder: COG reader, LV95, slope/roughness/vegetation analysis,
+              suitability model, heatmap, overlays, settings, analysis worker, page (main.ts)
 ```
+
+Pages: `index.html` (camping finder, landing), `panorama.html` (panorama app), `spike.html` (data spike, not in the offline cache), `camping.html` (redirects to the landing page).
 
 **Compute once, render many.** The horizon engine produces one `PanoramaScene`. Styles are pure renderers of that scene, so switching style never recomputes terrain.
 

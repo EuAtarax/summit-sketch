@@ -14,6 +14,9 @@ export interface GridWindow {
   data: Float32Array;
 }
 
+/** Where and how large a window is, without its values. */
+export type GridGeometry = Omit<GridWindow, 'data'>;
+
 export interface Product {
   collection: string;
   /** Ground sampling distance in meters. */
