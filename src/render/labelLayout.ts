@@ -1,4 +1,11 @@
-import type { LabelMetrics, LabeledPeak } from './labels';
+import {
+  labelFont,
+  labelMetrics,
+  labelText,
+  type LabelMetrics,
+  type LabelStyle,
+  type LabeledPeak,
+} from './labels';
 
 /** A peak to label, already in priority order (most important first). */
 export interface LabelCandidate {
@@ -198,4 +205,23 @@ function findSpot(
     if (!collides(candidate, placed, period, metrics.spacing)) return candidate;
   }
   return null;
+}
+
+/**
+ * Lays labels out with a style's font, measured on a 2D context. Used by the viewer tiles
+ * and by export, so both place labels the same way.
+ */
+export function layoutStyleLabels(
+  candidates: readonly LabelCandidate[],
+  style: LabelStyle,
+  frame: LayoutFrame,
+  measureCtx: CanvasRenderingContext2D,
+): LabeledPeak[] {
+  measureCtx.font = labelFont(style);
+  return layoutLabels(
+    candidates,
+    frame,
+    (name) => measureCtx.measureText(labelText(style, name)).width,
+    labelMetrics(style),
+  );
 }

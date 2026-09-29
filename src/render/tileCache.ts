@@ -1,6 +1,6 @@
 import type { PanoramaScene } from '../horizon/scene';
-import { layoutLabels, type LabelCandidate } from './labelLayout';
-import { labelFont, labelMetrics, labelText, type LabeledPeak } from './labels';
+import { layoutStyleLabels, type LabelCandidate } from './labelLayout';
+import type { LabeledPeak } from './labels';
 import { optionsKey, type PanoramaStyle, type RenderOptions } from './style';
 import { TILE_PX, type Level, type TileRef } from './tiles';
 import { createViewTransform } from './viewTransform';
@@ -148,19 +148,16 @@ export class TileCache {
     const hit = perKey.get(key);
     if (hit) return hit;
 
-    const style = variant.style.labelStyle;
     this.measureCtx ??= document.createElement('canvas').getContext('2d')!;
-    const measure = this.measureCtx;
-    measure.font = labelFont(style);
-    const layout = layoutLabels(
+    const layout = layoutStyleLabels(
       peaks,
+      variant.style.labelStyle,
       {
         pxPerDeg: level.ppd / this.dpr,
         exaggeration: variant.exaggeration,
         angleTop: this.content.top,
       },
-      (name) => measure.measureText(labelText(style, name)).width,
-      labelMetrics(style),
+      this.measureCtx,
     );
     perKey.set(key, layout);
     return layout;
