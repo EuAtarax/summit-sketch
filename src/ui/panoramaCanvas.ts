@@ -12,6 +12,19 @@ import {
 } from '../render/tiles';
 import { gridStep, wrap180, wrap360 } from '../render/viewTransform';
 
+/** What the viewer currently shows, for exporting "the current view". */
+export interface Viewport {
+  az: number;
+  fovDeg: number;
+  angleTop: number;
+  angleBottom: number;
+  /** Vertical extent of everything that is drawn. */
+  content: { top: number; bottom: number };
+  exaggeration: number;
+  /** Device pixels per degree on screen. */
+  devicePxPerDeg: number;
+}
+
 export interface PanoramaCanvas {
   /** Points the view at an azimuth (and optionally angle and horizontal field of view). */
   lookAt(az: number, angle?: number, fovDeg?: number): void;
@@ -26,6 +39,7 @@ export interface PanoramaCanvas {
   selectLabel(id: number | null): void;
   /** Current view center azimuth and horizontal field of view. */
   readonly heading: { az: number; fov: number };
+  readonly viewport: Viewport;
   /** The exaggeration 'auto' resolves to for this scene and screen. */
   readonly autoExaggeration: number;
   /** Time from the last setVariant until the view was fully drawn (ms), for tests. */
@@ -528,6 +542,18 @@ export function mountPanoramaCanvas(
   return {
     get heading() {
       return { az, fov: w / ppd };
+    },
+    get viewport() {
+      const half = (h - COMPASS_PX) / 2 / ppy();
+      return {
+        az,
+        fovDeg: w / ppd,
+        angleTop: angle + half,
+        angleBottom: angle - half,
+        content,
+        exaggeration: variant.exaggeration,
+        devicePxPerDeg: ppd * dpr,
+      };
     },
     get autoExaggeration() {
       return autoE;

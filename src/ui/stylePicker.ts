@@ -110,6 +110,7 @@ export function createStyleBar(
   initial: StyleChoice,
   onChange: (c: StyleChoice) => void,
   autoExaggerationOf: () => number,
+  onExport: () => void,
 ): StyleBar {
   let choice = styles.some((s) => s.id === initial.styleId)
     ? initial
@@ -168,7 +169,13 @@ export function createStyleBar(
   labelStatus.setAttribute('role', 'status');
   labelStatus.hidden = true;
 
-  bar.append(list, labelsButton, adjust);
+  const exportButton = document.createElement('button');
+  exportButton.type = 'button';
+  exportButton.className = 'export-button';
+  exportButton.textContent = 'Export';
+  exportButton.onclick = onExport;
+
+  bar.append(list, labelsButton, adjust, exportButton);
   parent.append(labelStatus, panel, bar);
 
   function styleOf(id: string) {

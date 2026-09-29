@@ -25,14 +25,24 @@ export async function fetchPeaksFromOverpass(
   const body = new URLSearchParams({ data: peakQuery(boxes) });
   for (let attempt = 0; ; attempt++) {
     onRequest?.();
-    const res = await options.fetchFn(OVERPASS_URL, {
-      method: 'POST',
-      body,
-      signal: AbortSignal.timeout(options.timeoutMs),
-    });
+    const delay = options.backoffMs[attempt];
+    let res: Response;
+    try {
+      res = await options.fetchFn(OVERPASS_URL, {
+        method: 'POST',
+        body,
+        signal: AbortSignal.timeout(options.timeoutMs),
+      });
+    } catch (err) {
+      // A busy Overpass server answers 429/504 without CORS headers, so the browser hides the
+      // status and fetch fails with a TypeError. Treat that like a busy server. Timeouts and
+      // aborts are not retried.
+      if (!(err instanceof TypeError) || delay === undefined) throw err;
+      await wait(delay);
+      continue;
+    }
     if (res.ok) return parsePeaks(await res.json());
     const busy = res.status === 429 || res.status === 504 || res.status === 503;
-    const delay = options.backoffMs[attempt];
     if (!busy || delay === undefined) throw new Error(`Overpass HTTP ${res.status}`);
     await wait(delay);
   }

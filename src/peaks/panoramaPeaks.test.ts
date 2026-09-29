@@ -125,6 +125,26 @@ describe('PanoramaPeakLoader', () => {
     expect(loader.requests).toBe(2);
   });
 
+  it('retries when the browser hides a busy answer behind a network error', async () => {
+    // Overpass sends 429/504 without CORS headers, which fetch reports as a TypeError.
+    let calls = 0;
+    const fetchFn: FetchFn = async () => {
+      if (++calls === 1) throw new TypeError('Failed to fetch');
+      return new Response(JSON.stringify(json), { status: 200 });
+    };
+    const loader = new PanoramaPeakLoader({ fetchFn, backoffMs: [1] });
+    expect(await loader.load(47.42, 10.98, 200_000)).toHaveLength(1);
+    expect(calls).toBe(2);
+  });
+
+  it('gives up on network errors after the last backoff step', async () => {
+    const fetchFn: FetchFn = async () => {
+      throw new TypeError('Failed to fetch');
+    };
+    const loader = new PanoramaPeakLoader({ fetchFn, backoffMs: [1] });
+    await expect(loader.load(47.42, 10.98, 200_000)).rejects.toThrow('Failed to fetch');
+  });
+
   it('does not cache a failure', async () => {
     let fail = true;
     const fetchFn: FetchFn = async () =>

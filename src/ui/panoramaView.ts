@@ -3,11 +3,21 @@ import type { PanoramaScene } from '../horizon/scene';
 import type { LabelCandidate } from '../render/labelLayout';
 import { loadLabelFonts, type LabeledPeak } from '../render/labels';
 import type { PanoramaStyle } from '../render/style';
-import { createAttributionFooter } from './attribution';
+import {
+  canvasToPngBlob,
+  EXPORT_PX_PER_DEG,
+  planExport,
+  renderExport,
+} from '../render/exportImage';
+import { ATTRIBUTION_TEXT, createAttributionFooter } from './attribution';
+import { deliverImage, exportFilename } from './deliver';
+import { createExportSheet, type ExportKind } from './exportSheet';
 import { formatBearing, formatCoords, formatDistance, formatSeconds } from './format';
 import { mountPanoramaCanvas, type PanoramaCanvas } from './panoramaCanvas';
 import { createStyleBar, renderOptionsFor, type StyleBar, type StyleChoice } from './stylePicker';
 
+const EXPORT_ERROR =
+  "Couldn't create the image. Try again, or pick the current view for a smaller file.";
 const LABELS_ERROR = "Couldn't load peak names. Check your connection and try again.";
 const NO_LABELS = 'No named peaks are visible from here.';
 
@@ -115,6 +125,82 @@ export function createPanoramaView(
 
   const styleOf = (id: string) => styles.find((s) => s.id === id) ?? styles[0]!;
 
+  /** What each export kind covers, from the live viewer state. */
+  function exportRequestFor(kind: ExportKind) {
+    if (!viewer || !scene) throw new Error('No panorama to export');
+    const c = styleBar.choice;
+    const vp = viewer.viewport;
+    const style = styleOf(c.styleId);
+    const o = scene.observer;
+    const full = kind === '360';
+    // "Current view" is limited to what is drawn; the sky above/below is not exported.
+    const angleTop = full ? vp.content.top : Math.min(vp.angleTop, vp.content.top);
+    const angleBottom = full ? vp.content.bottom : Math.max(vp.angleBottom, vp.content.bottom);
+    return {
+      scene,
+      style,
+      opts: renderOptionsFor(c, scene),
+      exaggeration: vp.exaggeration,
+      labelPeaks: c.labels ? candidates : null,
+      azStart: full ? null : vp.az - vp.fovDeg / 2,
+      fovDeg: full ? 360 : vp.fovDeg,
+      angleTop,
+      angleBottom,
+      wantedPxPerDeg: full ? EXPORT_PX_PER_DEG : Math.max(EXPORT_PX_PER_DEG, vp.devicePxPerDeg),
+      footer: [
+        o.name ?? 'Selected point',
+        `${Math.round(o.groundElev)} m \u00b7 ${formatCoords(o.lat, o.lon)} \u00b7 ${style.name}` +
+          ` \u00b7 ${scene.radiusM / 1000} km`,
+        ATTRIBUTION_TEXT,
+      ] as const,
+    };
+  }
+
+  let exportRun: AbortController | null = null;
+
+  async function runExport(kind: ExportKind): Promise<void> {
+    exportRun?.abort();
+    const run = (exportRun = new AbortController());
+    try {
+      const req = exportRequestFor(kind);
+      exportSheet.progress(0, 1);
+      const canvas = await renderExport(req, (d, t) => exportSheet.progress(d, t), run.signal);
+      const blob = await canvasToPngBlob(canvas);
+      if (run.signal.aborted) return;
+      const name = exportFilename(req.footer[0], req.style.id, kind);
+      exportSheet.close();
+      await deliverImage(blob, name);
+    } catch (err) {
+      if (run.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
+      console.error(err);
+      exportSheet.error(EXPORT_ERROR, () => void runExport(kind));
+    }
+  }
+
+  function openExport(): void {
+    if (!viewer || !scene) return;
+    const choices = (['360', 'view'] as const).map((kind) => {
+      const r = exportRequestFor(kind);
+      const plan = planExport(
+        r.fovDeg,
+        r.angleTop - r.angleBottom,
+        r.exaggeration,
+        r.wantedPxPerDeg,
+      );
+      return {
+        kind,
+        title: kind === '360' ? 'Whole 360\u00b0 panorama' : 'Current view',
+        detail: `${plan.width} \u00d7 ${plan.plotHeight + plan.footerHeight} px, PNG`,
+      };
+    });
+    exportSheet.open(choices);
+  }
+
+  const exportSheet = createExportSheet(root, {
+    onChoose: (kind) => void runExport(kind),
+    onCancel: () => exportRun?.abort(),
+  });
+
   const styleBar = createStyleBar(
     controls,
     styles,
@@ -126,6 +212,7 @@ export function createPanoramaView(
       onChoice(c);
     },
     () => viewer?.autoExaggeration ?? 1,
+    openExport,
   );
 
   /** Makes the viewer match the labels toggle, loading peak names on first use. */
@@ -188,6 +275,8 @@ export function createPanoramaView(
     styleBar,
     open(t, s) {
       clearViewer();
+      exportRun?.abort();
+      exportSheet.close();
       showPeak(null);
       candidates = null;
       labelRun++;
@@ -235,6 +324,8 @@ export function createPanoramaView(
       status.append(b);
     },
     close() {
+      exportRun?.abort();
+      exportSheet.close();
       clearViewer();
       root.hidden = true;
     },
