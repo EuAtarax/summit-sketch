@@ -72,3 +72,6 @@ The horizon shape and the direction of major peaks should match.
 - [ ] Shader coloring by elevation, slope, and snowline, with distance haze and a sky gradient
 - [ ] 360° via cube camera → equirectangular strip, feeding the same viewer and export
 - [ ] Optional later: satellite imagery draped on the terrain, only if a free source with a compatible license is found (check the license first)
+
+## Later (to discuss once Phases 1–7 are done)
+- [ ] **Camping spot finder:** suggest somewhat flat spots, large enough for a small 2-person tent, on or next to a trail. Local camping laws are out of scope for a first version. Open questions: slope threshold and minimum flat area, resolution needed (the elevation data is ~5–30 m per pixel, which may be too coarse for a tent pitch), trail data from OSM (`highway=path|footway|track`), and how to present results on the map.
