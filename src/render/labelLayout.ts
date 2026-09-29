@@ -6,6 +6,9 @@ export interface LabelCandidate {
   name: string;
   az: number;
   angle: number;
+  /** Summit elevation and distance from the observer, meters (shown when a label is tapped). */
+  elev: number;
+  dist: number;
 }
 
 /** The pixel frame labels are laid out in: the tile space of one zoom level. */
@@ -166,6 +169,8 @@ export function layoutLabels(
       name: c.name,
       az: c.az,
       angle: c.angle,
+      elev: c.elev,
+      dist: c.dist,
       box: { dx: spot.cx - summitX - w / 2, dy: spot.top - summitY, w, h: metrics.height },
     });
   }

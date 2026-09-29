@@ -40,5 +40,12 @@ export async function labelCandidatesFor(
 
   await prepareCrestLookup(scene);
   const ranked = rankPeaks(scene, visiblePeaks(scene, sightings, dem));
-  return ranked.map((r) => ({ id: r.peak.id, name: r.peak.name, az: r.az, angle: r.angle }));
+  return ranked.map((r) => ({
+    id: r.peak.id,
+    name: r.peak.name,
+    az: r.az,
+    angle: r.angle,
+    elev: r.elev,
+    dist: r.dist,
+  }));
 }

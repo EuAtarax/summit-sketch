@@ -128,6 +128,11 @@ export class TileCache {
     return canvas;
   }
 
+  /** The label layout a variant uses at a level (empty without labels). */
+  labelLayout(variant: Variant, level: Level): readonly LabeledPeak[] {
+    return variant.labelPeaks ? this.labelsFor(variant, variant.labelPeaks, level) : [];
+  }
+
   /**
    * Labels are placed once per (style, level, exaggeration) in absolute az/angle space, so
    * every tile draws the same layout and labels line up across tile edges and the seam.

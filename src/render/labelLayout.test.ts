@@ -8,7 +8,7 @@ const FRAME: LayoutFrame = { pxPerDeg: 10, exaggeration: 1, angleTop: 20 };
 const width = (name: string) => name.length * 6;
 
 function peak(id: number, az: number, angle: number, name = `P${id}`): LabelCandidate {
-  return { id, name, az, angle };
+  return { id, name, az, angle, elev: 0, dist: 0 };
 }
 
 /** Absolute rectangle of a placed label in frame px. */

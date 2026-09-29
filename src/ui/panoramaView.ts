@@ -1,10 +1,10 @@
 import type { EngineStats } from '../horizon/engine';
 import type { PanoramaScene } from '../horizon/scene';
 import type { LabelCandidate } from '../render/labelLayout';
-import { loadLabelFonts } from '../render/labels';
+import { loadLabelFonts, type LabeledPeak } from '../render/labels';
 import type { PanoramaStyle } from '../render/style';
 import { createAttributionFooter } from './attribution';
-import { formatCoords, formatSeconds } from './format';
+import { formatBearing, formatCoords, formatDistance, formatSeconds } from './format';
 import { mountPanoramaCanvas, type PanoramaCanvas } from './panoramaCanvas';
 import { createStyleBar, renderOptionsFor, type StyleBar, type StyleChoice } from './stylePicker';
 
@@ -74,7 +74,26 @@ export function createPanoramaView(
   const info = document.createElement('p');
   info.className = 'viewer-info';
 
-  stage.append(pano, status);
+  // Details of the tapped label; hidden until one is selected.
+  const card = document.createElement('div');
+  card.className = 'peak-card';
+  card.hidden = true;
+  const cardText = document.createElement('div');
+  const cardTitle = document.createElement('h3');
+  const cardDetail = document.createElement('p');
+  cardText.append(cardTitle, cardDetail);
+  const cardClose = document.createElement('button');
+  cardClose.type = 'button';
+  cardClose.className = 'icon-button';
+  cardClose.setAttribute('aria-label', 'Close peak details');
+  cardClose.textContent = '×';
+  cardClose.onclick = () => {
+    viewer?.selectLabel(null);
+    showPeak(null);
+  };
+  card.append(cardText, cardClose);
+
+  stage.append(pano, card, status);
   root.append(bar, stage, controls, info, createAttributionFooter());
   parent.append(root);
 
@@ -84,6 +103,15 @@ export function createPanoramaView(
   let candidates: LabelCandidate[] | null = null;
   let labelRun = 0;
   let labelsShown = initialChoice.labels;
+
+  function showPeak(label: LabeledPeak | null) {
+    card.hidden = label === null;
+    if (!label) return;
+    cardTitle.textContent = label.name;
+    cardDetail.textContent =
+      `${Math.round(label.elev)} m · ${formatDistance(label.dist)} away · ` +
+      formatBearing(label.az);
+  }
 
   const styleOf = (id: string) => styles.find((s) => s.id === id) ?? styles[0]!;
 
@@ -109,6 +137,7 @@ export function createPanoramaView(
     if (!viewer || !sc) return;
     if (!wanted) {
       viewer.setLabels(null);
+      showPeak(null);
       styleBar.setLabelState({ kind: 'idle' });
       return;
     }
@@ -159,6 +188,7 @@ export function createPanoramaView(
     styleBar,
     open(t, s) {
       clearViewer();
+      showPeak(null);
       candidates = null;
       labelRun++;
       styleBar.setLabelState({ kind: 'idle' });
@@ -182,6 +212,7 @@ export function createPanoramaView(
         sc,
         { style: styleOf(c.styleId), opts: renderOptionsFor(c, sc), exaggeration: c.exaggeration },
         () => viewer && styleBar.refresh(viewer.heading.az),
+        showPeak,
       );
       // The viewer sizes itself on the next frame; thumbnails use its heading then.
       requestAnimationFrame(() => viewer && styleBar.setScene(sc, viewer.heading.az));
