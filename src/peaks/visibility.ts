@@ -1,5 +1,6 @@
 import { distanceM, elevationAngleDeg, initialBearingDeg } from '../geo/geodesy';
 import type { PanoramaScene } from '../horizon/scene';
+import { runningMaxAngle } from './crestLookup';
 import type { Peak } from './overpass';
 
 /** Peaks closer than this are the observer's own summit or its cairn, not part of the view. */
@@ -23,56 +24,6 @@ export interface VisiblePeak extends PeakSighting {
   angle: number;
   /** Summit elevation used, meters (OSM `ele`, else the DEM). */
   elev: number;
-}
-
-/** Visible crests per ray, near to far. Angles rise with distance by construction. */
-interface CrestLookup {
-  dist: number[][];
-  angle: number[][];
-}
-
-const lookups = new WeakMap<PanoramaScene, CrestLookup>();
-
-function crestLookup(scene: PanoramaScene): CrestLookup {
-  const hit = lookups.get(scene);
-  if (hit) return hit;
-  const rayCount = scene.horizonAngle.length;
-  const entries: [number, number][][] = Array.from({ length: rayCount }, () => []);
-  for (const ridge of scene.ridgelines) {
-    for (const p of ridge.points)
-      entries[rayOf(p.az, scene.azStep, rayCount)]!.push([p.dist, p.angle]);
-  }
-  const lookup: CrestLookup = { dist: [], angle: [] };
-  for (const list of entries) {
-    list.sort((a, b) => a[0] - b[0]);
-    lookup.dist.push(list.map((e) => e[0]));
-    lookup.angle.push(list.map((e) => e[1]));
-  }
-  lookups.set(scene, lookup);
-  return lookup;
-}
-
-function rayOf(az: number, azStep: number, rayCount: number): number {
-  return ((Math.round(az / azStep) % rayCount) + rayCount) % rayCount;
-}
-
-/**
- * Highest apparent angle of any visible crest on the ray nearer than limitDist, or -Infinity
- * when nothing stands in front. This is the running max of the ray cast at that distance.
- */
-export function runningMaxAngle(scene: PanoramaScene, az: number, limitDist: number): number {
-  const lookup = crestLookup(scene);
-  const ray = rayOf(az, scene.azStep, scene.horizonAngle.length);
-  const dists = lookup.dist[ray]!;
-  // Last crest with dist < limitDist (binary search on the sorted distances).
-  let lo = 0;
-  let hi = dists.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (dists[mid]! < limitDist) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo === 0 ? -Infinity : lookup.angle[ray]![lo - 1]!;
 }
 
 /** Peaks inside the panorama radius (and not the observer's own summit), with bearing and distance. */

@@ -3,14 +3,9 @@ import { destinationPoint } from '../geo/geodesy';
 import { computeScene } from '../horizon/pipeline';
 import type { PanoramaScene } from '../horizon/scene';
 import { coneTerrain, SyntheticSource } from '../terrain/syntheticSource';
+import { runningMaxAngle } from './crestLookup';
 import type { Peak } from './overpass';
-import {
-  MIN_PEAK_DIST_M,
-  needsDemElevation,
-  peakSightings,
-  runningMaxAngle,
-  visiblePeaks,
-} from './visibility';
+import { MIN_PEAK_DIST_M, needsDemElevation, peakSightings, visiblePeaks } from './visibility';
 
 const OBSERVER = { lat: 47, lon: 10, groundElev: 500, eyeHeight: 2 };
 const BASE = 500;
