@@ -17,6 +17,38 @@ export interface GridWindow {
 /** Where and how large a window is, without its values. */
 export type GridGeometry = Omit<GridWindow, 'data'>;
 
+/** The four corners of a window (north-west first, clockwise) as [lat, lon] pairs. */
+export function windowCorners(g: GridGeometry): [number, number][] {
+  const w = g.width * g.cell;
+  const h = g.height * g.cell;
+  return [
+    [g.e0, g.n0],
+    [g.e0 + w, g.n0],
+    [g.e0 + w, g.n0 - h],
+    [g.e0, g.n0 - h],
+  ].map(([e, n]) => {
+    const p = lv95ToWgs84(e!, n!);
+    return [p.lat, p.lon] as [number, number];
+  });
+}
+
+/**
+ * The smallest north-up WGS84 box (west, south, east, north) that contains a window grown by
+ * `marginM` on every side. The LV95 grid is rotated against north, so all four corners count.
+ */
+export function wgs84Envelope(g: GridGeometry, marginM = 0): [number, number, number, number] {
+  const corners = windowCorners({
+    e0: g.e0 - marginM,
+    n0: g.n0 + marginM,
+    cell: g.cell,
+    width: g.width + (2 * marginM) / g.cell,
+    height: g.height + (2 * marginM) / g.cell,
+  });
+  const lats = corners.map((c) => c[0]);
+  const lons = corners.map((c) => c[1]);
+  return [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
+}
+
 export interface Product {
   collection: string;
   /** Ground sampling distance in meters. */
@@ -29,6 +61,8 @@ export const DTM_05M: Product = { collection: 'ch.swisstopo.swissalti3d', gsd: 0
 export const DSM_05M: Product = { collection: 'ch.swisstopo.swisssurface3d-raster', gsd: 0.5 };
 
 const TILE_M = 1000;
+/** Extra search margin around a window when looking up tiles, meters. */
+const STAC_MARGIN_M = 200;
 
 /** Window of the given half size around a point, snapped to the cell grid (which divides 1 km). */
 export function windowBounds(
@@ -77,12 +111,9 @@ export async function loadWindow(
   const cell = product.gsd;
   const b = windowBounds(centerE, centerN, halfSizeM, cell);
   const sizeM = b.width * cell;
-  const sw = lv95ToWgs84(b.e0, b.n0 - sizeM);
-  const ne = lv95ToWgs84(b.e0 + sizeM, b.n0);
-  const margin = 0.002;
   const assets = await fetchTileAssets(
     product.collection,
-    [sw.lon - margin, sw.lat - margin, ne.lon + margin, ne.lat + margin],
+    wgs84Envelope({ ...b, cell }, STAC_MARGIN_M),
     cell,
     fetchFn,
   );

@@ -1,7 +1,14 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { FetchFn } from './cog';
 import { buildTestTiff } from './testTiff';
-import { loadWindow, tilesForWindow, windowBounds, type Product } from './terrain';
+import {
+  loadWindow,
+  tilesForWindow,
+  windowBounds,
+  windowCorners,
+  wgs84Envelope,
+  type Product,
+} from './terrain';
 
 describe('windowBounds', () => {
   it('snaps to the cell grid and keeps the requested size', () => {
@@ -102,5 +109,46 @@ describe('loadWindow', () => {
     expect(Number.isNaN(w.data[10 * w.width + w.width - 1]!)).toBe(true);
     expect(Number.isNaN(w.data[10 * w.width]!)).toBe(false);
     expect(progress.at(-1)).toBeGreaterThan(0);
+  });
+});
+
+describe('windowCorners', () => {
+  it('returns the corners of the window around the right place, about its size apart', () => {
+    // 1 km window at the Glarus Sud test tile.
+    const c = windowCorners({ e0: 2722000, n0: 1205000, cell: 2, width: 500, height: 500 });
+    expect(c).toHaveLength(4);
+    const dLat = Math.abs(c[0]![0] - c[3]![0]) * 111_200;
+    expect(dLat).toBeGreaterThan(950);
+    expect(dLat).toBeLessThan(1050);
+    for (const [lat, lon] of c) {
+      expect(lat).toBeGreaterThan(46.97);
+      expect(lat).toBeLessThan(47.01);
+      expect(lon).toBeGreaterThan(9.03);
+      expect(lon).toBeLessThan(9.09);
+    }
+  });
+});
+
+describe('wgs84Envelope', () => {
+  const g = { e0: 2722000, n0: 1205000, cell: 2, width: 500, height: 500 };
+
+  it('contains all four corners even though the grid is rotated against north', () => {
+    const [west, south, east, north] = wgs84Envelope(g);
+    for (const [lat, lon] of windowCorners(g)) {
+      expect(lon).toBeGreaterThanOrEqual(west);
+      expect(lon).toBeLessThanOrEqual(east);
+      expect(lat).toBeGreaterThanOrEqual(south);
+      expect(lat).toBeLessThanOrEqual(north);
+    }
+    // The two opposite corners alone (south-west and north-east) would miss part of it.
+    const corners = windowCorners(g);
+    expect(Math.min(...corners.map((c) => c[1]))).toBe(west);
+  });
+
+  it('grows by the margin on every side', () => {
+    const plain = wgs84Envelope(g);
+    const grown = wgs84Envelope(g, 100);
+    expect(plain[0] - grown[0]).toBeGreaterThan(0.0008);
+    expect(grown[3] - plain[3]).toBeGreaterThan(0.0008);
   });
 });

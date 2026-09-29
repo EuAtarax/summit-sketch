@@ -6,6 +6,9 @@ import '@fontsource/barlow-condensed/700.css';
 import './styles.css';
 import './ui/search.css';
 import { mountApp } from './ui/app';
+import { reloadWhenUpdated } from './ui/updates';
+
+reloadWhenUpdated();
 
 const root = document.getElementById('app');
 if (root) mountApp(root);

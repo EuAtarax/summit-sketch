@@ -6,41 +6,42 @@ import '../ui/search.css';
 import './camping.css';
 import { NominatimClient } from '../search/nominatim';
 import { createSearchBar } from '../ui/searchBar';
-import { patchMinimum, pitchSuitability, shareAbove } from './analysis';
+import { reloadWhenUpdated } from '../ui/updates';
+import { patchMinimum, pitchSuitability } from './analysis';
 import { AnalysisClient, SupersededError } from './analysisClient';
-import { LAYERS, makeColorizer, renderOverlay, windowCorners, type LayerId } from './heatmap';
+import { createBaseMap, OVERLAY_PANE } from './baseMap';
+import { LAYERS, makeColorizer, renderOverlay, type LayerId } from './heatmap';
 import { isInSwitzerland, lv95ToWgs84, wgs84ToLv95 } from './lv95';
-import { CREDITS, OVERLAYS, overlayTileUrl } from './overlays';
+import { DRINKING_LABELS } from './osm';
 import { createPanel } from './panel';
 import type { AnalysisResult, Progress } from './pipeline';
-import { loadSettings, saveSettings, type CampingSettings } from './settings';
-import { DTM_2M, windowBounds } from './terrain';
+import { campScore, pickSpots, type Spot } from './scoring';
+import { loadSettings, saveSettings, withPatch, type CampingSettings } from './settings';
+import { describeSpot, NO_GOOD_SPOTS, protectedLayer, summarize } from './summary';
+import { DTM_2M, windowBounds, windowCorners } from './terrain';
 
-const SWITZERLAND_BOUNDS: L.LatLngBoundsLiteral = [
-  [45.8, 5.95],
-  [47.85, 10.55],
-];
+reloadWhenUpdated();
+
 /** Zoom used when jumping to a place or to the user's location. */
 const SPOT_ZOOM = 15;
 /** Below this zoom a tap zooms in instead of choosing a spot. */
 const MIN_SPOT_ZOOM = 12;
-/** A cell counts as pitchable from this suitability on (for the summary numbers). */
-const PITCHABLE = 0.5;
 const RESCORE_DELAY_MS = 120;
 const RED = '#C8102E';
+const BLUE = '#1E6EC8';
 
-const SWISSTOPO =
-  '© <a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">swisstopo</a>';
-const BASES = {
-  map: 'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg',
-  aerial:
-    'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg',
-} as const;
+// --- state ------------------------------------------------------------------------------
 
 let settings: CampingSettings = loadSettings();
 let spot: { lat: number; lon: number } | null = null;
 let result: AnalysisResult | null = null;
+/** Derived from `result` and the settings by rescore(). */
 let suitability: Float32Array | null = null;
+let score: Float32Array | null = null;
+let protectedValues: Float32Array | null = null;
+let spots: Spot[] = [];
+
+// --- map and panel ----------------------------------------------------------------------
 
 const app = document.getElementById('app')!;
 const mapEl = document.createElement('div');
@@ -49,53 +50,10 @@ const topBar = document.createElement('div');
 topBar.className = 'map-top';
 app.append(mapEl, topBar);
 
-const map = L.map(mapEl, { zoomControl: false, attributionControl: false });
-L.control.zoom({ position: 'bottomright' }).addTo(map);
-L.control
-  .attribution({ prefix: false, position: 'bottomleft' })
-  .addAttribution(`Terrain: swissALTI3D ${SWISSTOPO}`)
-  .addTo(map);
-map.fitBounds(SWITZERLAND_BOUNDS);
-// Overlays (trails, protected areas) sit above the heatmap so they stay readable through it.
-map.createPane('overlays').style.zIndex = '450';
-
-let baseLayer: L.TileLayer | null = null;
-function showBase(id: CampingSettings['base']): void {
-  baseLayer?.remove();
-  baseLayer = L.tileLayer(BASES[id], {
-    maxNativeZoom: id === 'aerial' ? 20 : 18,
-    maxZoom: 20,
-    attribution: SWISSTOPO,
-  })
-    .addTo(map)
-    .bringToBack();
-}
-
-const overlayLayers = new Map<string, L.TileLayer>();
-function showOverlays(ids: readonly string[]): void {
-  for (const [id, layer] of overlayLayers) {
-    if (!ids.includes(id)) {
-      layer.remove();
-      overlayLayers.delete(id);
-    }
-  }
-  for (const def of OVERLAYS) {
-    if (!ids.includes(def.id) || overlayLayers.has(def.id)) continue;
-    overlayLayers.set(
-      def.id,
-      L.tileLayer(overlayTileUrl(def.layer), {
-        pane: 'overlays',
-        opacity: 0.75,
-        maxNativeZoom: 18,
-        maxZoom: 20,
-        attribution: CREDITS[def.credit],
-      }).addTo(map),
-    );
-  }
-}
+const { map, showBase, showOverlays } = createBaseMap(mapEl);
 
 function update(patch: Partial<CampingSettings>): void {
-  settings = { ...settings, ...patch };
+  settings = withPatch(settings, patch);
   saveSettings(settings);
   panel.syncFrom(settings);
 }
@@ -110,12 +68,14 @@ const panel = createPanel(app, settings, {
     if (patch.base) showBase(settings.base);
     if (patch.overlays) showOverlays(settings.overlays);
     if (patch.opacity !== undefined) overlay?.setOpacity(settings.opacity);
+    if (patch.showDrinking !== undefined) showDrinkingSources();
     if (patch.layer || patch.palette) renderLayer();
   },
-  onSuitabilityChange(params) {
-    update({ suitability: params });
+  onModelChange(patch) {
+    update(patch);
     scheduleRescore();
   },
+  onSpotSelect: focusSpot,
   onLocate: locate,
 });
 panel.syncFrom(settings);
@@ -130,7 +90,7 @@ createSearchBar(
   (place) => map.setView([place.lat, place.lon], Math.max(place.zoom, 12)),
 );
 
-// --- choosing a spot and analysing ------------------------------------------------------
+// --- choosing a spot and analysing -------------------------------------------------------
 
 let marker: L.CircleMarker | null = null;
 let outline: L.Polygon | null = null;
@@ -182,12 +142,14 @@ function drawOutline(solid: boolean): void {
   }).addTo(map);
 }
 
-const describe = (p: Progress): string =>
+const describeProgress = (p: Progress): string =>
   p.stage === 'surface'
     ? `Loading vegetation height: ${p.done}/${p.total} tiles (large)`
     : p.stage === 'terrain'
       ? `Loading terrain: ${p.done}/${p.total} tiles`
-      : 'Analysing...';
+      : p.stage === 'features'
+        ? 'Loading trails, water and protected areas...'
+        : 'Analysing...';
 
 function startAnalysis(): void {
   if (!spot) return;
@@ -195,13 +157,10 @@ function startAnalysis(): void {
   panel.setStatus('Loading terrain...');
   const { e, n, half } = analysisWindow();
   client
-    .run({ e, n, halfSizeM: half, canopy: settings.canopy }, (p) => panel.setStatus(describe(p)))
-    .then((res) => {
-      result = res;
-      rescore();
-      drawOutline(true);
-      if (window.matchMedia('(max-width: 640px)').matches) panel.setOpen(false);
-    })
+    .run({ e, n, halfSizeM: half, canopy: settings.canopy, date: Date.now() }, (p) =>
+      panel.setStatus(describeProgress(p)),
+    )
+    .then(onResult)
     .catch((err: unknown) => {
       if (err instanceof SupersededError) return;
       console.error(err);
@@ -211,7 +170,20 @@ function startAnalysis(): void {
     });
 }
 
-/** Recomputes suitability from the stored grids and the current thresholds. */
+function onResult(res: AnalysisResult): void {
+  result = res;
+  protectedValues = protectedLayer(res);
+  panel.setWarnings(res.warnings);
+  panel.setAreas(res.areas);
+  showDrinkingSources();
+  rescore();
+  drawOutline(true);
+  if (window.matchMedia('(max-width: 640px)').matches) panel.setOpen(false);
+}
+
+// --- scoring, layers, markers ------------------------------------------------------------
+
+/** Recomputes suitability, the camp score and the best spots from the stored grids. */
 function rescore(): void {
   if (!result) return;
   const { width, height } = result.geometry;
@@ -222,14 +194,32 @@ function rescore(): void {
     height,
     p.patchRadiusCells,
   );
-  renderLayer();
-  const good = shareAbove(suitability, PITCHABLE);
-  const sizeM = width * result.geometry.cell;
-  const hectares = (good * sizeM * sizeM) / 10_000;
-  panel.setStatus(
-    `${(sizeM / 1000).toFixed(1)} x ${(sizeM / 1000).toFixed(1)} km in ${(result.millis / 1000).toFixed(1)} s. ` +
-      `${(good * 100).toFixed(1)} % of the area (${hectares.toFixed(1)} ha) has ground you could pitch on.`,
+  score = campScore(
+    {
+      suitability,
+      ...(result.trailDistance ? { trailDistance: result.trailDistance } : {}),
+      ...(result.waterDistance ? { waterDistance: result.waterDistance } : {}),
+      ...(result.drinkingDistance ? { drinkingDistance: result.drinkingDistance } : {}),
+      ...(result.protectionIndex
+        ? {
+            protection: {
+              index: result.protectionIndex,
+              inForce: result.areas.map((a) => a.inForce),
+            },
+          }
+        : {}),
+    },
+    settings.nearby,
+    settings.hideProtected,
   );
+  spots = pickSpots(score, result.geometry);
+  renderLayer();
+  showSpots();
+  panel.setSpots(
+    spots.map((s) => describeSpot(result!, s)),
+    NO_GOOD_SPOTS,
+  );
+  panel.setStatus(summarize(result, suitability, score, settings.hideProtected));
 }
 
 let rescoreTimer = 0;
@@ -240,18 +230,16 @@ function scheduleRescore(): void {
 
 function valuesOf(layer: LayerId): Float32Array | undefined {
   if (!result) return undefined;
-  switch (layer) {
-    case 'suitability':
-      return suitability ?? undefined;
-    case 'slope':
-      return result.slope;
-    case 'roughness':
-      return result.roughness;
-    case 'canopy':
-      return result.canopy;
-    case 'water':
-      return result.water;
-  }
+  const byLayer: Record<LayerId, Float32Array | null | undefined> = {
+    score,
+    suitability,
+    slope: result.slope,
+    roughness: result.roughness,
+    canopy: result.canopy,
+    water: result.water,
+    protected: protectedValues,
+  };
+  return byLayer[layer] ?? undefined;
 }
 
 function renderLayer(): void {
@@ -262,7 +250,9 @@ function renderLayer(): void {
   const values = valuesOf(settings.layer);
   if (!values) {
     panel.setStatus(
-      `${LAYERS[settings.layer].label} needs "Use vegetation height" and an area of 1 km or less.`,
+      settings.layer === 'canopy'
+        ? 'Vegetation height needs "Use vegetation height" and an area of 1 km or less.'
+        : `${LAYERS[settings.layer].label} is not available for this area.`,
     );
     return;
   }
@@ -277,7 +267,54 @@ function renderLayer(): void {
   }).addTo(map);
 }
 
-// --- location, URL ----------------------------------------------------------------------
+const spotLayer = L.layerGroup().addTo(map);
+const spotMarkers = new Map<number, L.Marker>();
+function showSpots(): void {
+  spotLayer.clearLayers();
+  spotMarkers.clear();
+  for (const s of spots) {
+    const { lat, lon } = lv95ToWgs84(s.e, s.n);
+    const item = describeSpot(result!, s);
+    const icon = L.divIcon({
+      className: 'spot-marker',
+      html: `<span>${s.rank}</span>`,
+      iconSize: [28, 28],
+    });
+    spotMarkers.set(
+      s.rank,
+      L.marker([lat, lon], { icon, pane: OVERLAY_PANE })
+        .bindPopup(`<strong>${item.title}</strong><br>${item.detail}`)
+        .addTo(spotLayer),
+    );
+  }
+}
+
+function focusSpot(rank: number): void {
+  const m = spotMarkers.get(rank);
+  if (!m) return;
+  map.setView(m.getLatLng(), Math.max(map.getZoom(), 17));
+  m.openPopup();
+}
+
+const drinkingLayer = L.layerGroup().addTo(map);
+function showDrinkingSources(): void {
+  drinkingLayer.clearLayers();
+  if (!settings.showDrinking || !result) return;
+  for (const d of result.drinking) {
+    L.circleMarker([d.lat, d.lon], {
+      pane: OVERLAY_PANE,
+      radius: 6,
+      color: '#FFFFFF',
+      weight: 2,
+      fillColor: BLUE,
+      fillOpacity: 1,
+    })
+      .bindPopup(`${DRINKING_LABELS[d.kind]}${d.name ? `: ${d.name}` : ''}`)
+      .addTo(drinkingLayer);
+  }
+}
+
+// --- location, URL, clicks ---------------------------------------------------------------
 
 function locate(): void {
   if (!navigator.geolocation) {
@@ -330,9 +367,11 @@ Object.assign(globalThis, {
     get result() {
       return result;
     },
-    get suitability() {
-      return suitability;
+    get score() {
+      return score;
     },
-    lv95ToWgs84,
+    get spots() {
+      return spots;
+    },
   },
 });

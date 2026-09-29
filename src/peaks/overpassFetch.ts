@@ -13,16 +13,16 @@ export interface OverpassFetchOptions {
 }
 
 /**
- * Runs the named-peak query for one or more boxes, retrying with backoff while the shared
+ * Sends one Overpass query and returns the parsed JSON, retrying with backoff while the shared
  * public server is busy. Throws on any other failure or when the retries run out.
  * `onRequest` is called before every HTTP request (for request counting).
  */
-export async function fetchPeaksFromOverpass(
-  boxes: BBox | readonly BBox[],
+export async function postOverpass(
+  query: string,
   options: OverpassFetchOptions,
   onRequest?: () => void,
-): Promise<Peak[]> {
-  const body = new URLSearchParams({ data: peakQuery(boxes) });
+): Promise<unknown> {
+  const body = new URLSearchParams({ data: query });
   for (let attempt = 0; ; attempt++) {
     onRequest?.();
     const delay = options.backoffMs[attempt];
@@ -41,9 +41,18 @@ export async function fetchPeaksFromOverpass(
       await wait(delay);
       continue;
     }
-    if (res.ok) return parsePeaks(await res.json());
+    if (res.ok) return res.json();
     const busy = res.status === 429 || res.status === 504 || res.status === 503;
     if (!busy || delay === undefined) throw new Error(`Overpass HTTP ${res.status}`);
     await wait(delay);
   }
+}
+
+/** Runs the named-peak query for one or more boxes (see postOverpass for the retry rules). */
+export async function fetchPeaksFromOverpass(
+  boxes: BBox | readonly BBox[],
+  options: OverpassFetchOptions,
+  onRequest?: () => void,
+): Promise<Peak[]> {
+  return parsePeaks((await postOverpass(peakQuery(boxes), options, onRequest)) as never);
 }

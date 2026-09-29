@@ -1,84 +1,186 @@
 import type { SuitabilityParams } from './analysis';
+import { checkRow, el, field, section, selectOf, sliderRow } from './dom';
 import { LAYERS, type LayerId } from './heatmap';
 import { OVERLAYS } from './overlays';
 import { PALETTES, paletteGradientCss, type PaletteId } from './palettes';
+import type { AreaInfo } from './pipeline';
+import type { NearbyParams } from './scoring';
+import type { SpotItem } from './summary';
 import {
   AREA_SIZES_KM,
   DEFAULT_SETTINGS,
   MAX_CANOPY_AREA_KM,
+  NEARBY_CONTROLS,
   SUITABILITY_CONTROLS,
   type AreaKm,
   type BaseMapId,
   type CampingSettings,
 } from './settings';
 
+type ViewPatch = Partial<
+  Pick<CampingSettings, 'layer' | 'palette' | 'opacity' | 'base' | 'overlays' | 'showDrinking'>
+>;
+type ModelPatch = Partial<Pick<CampingSettings, 'suitability' | 'nearby' | 'hideProtected'>>;
+
 export interface PanelHandlers {
-  /** Area size, vegetation option: changes that need a new analysis. */
+  /** Area size and the vegetation option: changes that need a new analysis. */
   onAreaChange(patch: Partial<Pick<CampingSettings, 'areaKm' | 'canopy'>>): void;
-  /** Layer, palette, opacity, base map, overlays: changes that only redraw. */
-  onViewChange(
-    patch: Partial<Pick<CampingSettings, 'layer' | 'palette' | 'opacity' | 'base' | 'overlays'>>,
-  ): void;
-  /** Slider and checkbox changes of the suitability model (fired on every input). */
-  onSuitabilityChange(params: SuitabilityParams): void;
+  /** Layer, palette, opacity, base map, overlays, markers: changes that only redraw. */
+  onViewChange(patch: ViewPatch): void;
+  /** Changes of the scoring model, fired on every slider movement. */
+  onModelChange(patch: ModelPatch): void;
+  onSpotSelect(rank: number): void;
   onLocate(): void;
 }
 
 export interface Panel {
   setStatus(text: string): void;
+  /** Notes about data that could not be loaded (empty list clears them). */
+  setWarnings(texts: readonly string[]): void;
   /** Shows the legend of the active layer with the active palette. */
   setLegend(layer: LayerId, palette: PaletteId): void;
   /** The link to the panorama for the chosen spot, or null when nothing is chosen. */
   setPanoramaLink(href: string | null): void;
+  /** The list of best spots; `emptyText` says why there are none. */
+  setSpots(items: readonly SpotItem[], emptyText?: string): void;
+  setAreas(areas: readonly AreaInfo[]): void;
   setOpen(open: boolean): void;
   /** Keeps the vegetation checkbox in step with the chosen area. */
   syncFrom(settings: CampingSettings): void;
 }
 
-const el = <K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  props: Partial<HTMLElementTagNameMap[K]> & { className?: string } = {},
-  ...children: (Node | string)[]
-): HTMLElementTagNameMap[K] => {
-  const node = Object.assign(document.createElement(tag), props);
-  node.append(...children);
-  return node;
+const NO_SPOTS = 'Choose a spot on the map to see the best places around it.';
+const NO_AREAS = 'No protected areas from the federal inventories here.';
+
+/** The "Tune the pitch" section: one slider per threshold, the lake rule and a reset button. */
+function pitchSection(
+  initial: SuitabilityParams,
+  onChange: (params: SuitabilityParams) => void,
+): HTMLDetailsElement {
+  let params = initial;
+  const sliders = new Map<keyof SuitabilityParams, ReturnType<typeof sliderRow>>();
+  const rows = SUITABILITY_CONTROLS.map((c) => {
+    const row = sliderRow(
+      { ...c, value: initial[c.key], recommended: DEFAULT_SETTINGS.suitability[c.key] },
+      (value) => onChange((params = { ...params, [c.key]: value })),
+    );
+    sliders.set(c.key, row);
+    return row.node;
+  });
+  const water = checkRow(
+    'Rule out lakes',
+    initial.excludeWater,
+    (on) => onChange((params = { ...params, excludeWater: on })),
+    'Lakes are perfectly flat in the terrain data, so they would otherwise look ideal.',
+  );
+  const reset = el('button', {
+    type: 'button',
+    className: 'button secondary',
+    textContent: 'Use recommended values',
+  });
+  reset.onclick = () => {
+    params = DEFAULT_SETTINGS.suitability;
+    for (const [key, row] of sliders) row.set(params[key] as number);
+    water.input.checked = params.excludeWater;
+    onChange(params);
+  };
+  return section('Tune the pitch', false, ...rows, water.node, reset);
+}
+
+/** The "Near trails and water" section: a switch and a distance for each preference. */
+function nearbySection(
+  initial: NearbyParams,
+  showDrinking: boolean,
+  onNearby: (nearby: NearbyParams) => void,
+  onDrinking: (show: boolean) => void,
+): HTMLDetailsElement {
+  let nearby = initial;
+  const rows = NEARBY_CONTROLS.map((c) => {
+    const toggle = checkRow(c.label, initial[c.key].enabled, (enabled) => {
+      nearby = { ...nearby, [c.key]: { ...nearby[c.key], enabled } };
+      onNearby(nearby);
+    });
+    const slider = sliderRow(
+      {
+        label: 'Within',
+        unit: ' m',
+        min: c.min,
+        max: c.max,
+        step: c.step,
+        value: initial[c.key].maxM,
+        help: c.help,
+      },
+      (maxM) => {
+        nearby = { ...nearby, [c.key]: { ...nearby[c.key], maxM } };
+        onNearby(nearby);
+      },
+    );
+    return el('div', { className: 'nearby' }, toggle.node, slider.node);
+  });
+  const markers = checkRow('Show drinking-water sources on the map', showDrinking, onDrinking);
+  return section('Near trails and water', false, ...rows, markers.node);
+}
+
+/** The overlays section: base map choice and checkboxes grouped by kind. */
+function mapSection(
+  initial: CampingSettings,
+  onBase: (base: BaseMapId) => void,
+  onOverlays: (ids: string[]) => void,
+): HTMLDetailsElement {
+  const enabled = new Set(initial.overlays);
+  const group = (kind: 'paths' | 'protected', title: string) =>
+    el(
+      'fieldset',
+      { className: 'overlay-group' },
+      el('legend', { textContent: title }),
+      ...OVERLAYS.filter((o) => o.group === kind).map(
+        (o) =>
+          checkRow(
+            o.label,
+            enabled.has(o.id),
+            (on) => {
+              if (on) enabled.add(o.id);
+              else enabled.delete(o.id);
+              onOverlays([...enabled]);
+            },
+            o.note,
+          ).node,
+      ),
+    );
+  const base = selectOf<BaseMapId>(
+    [
+      { value: 'map', label: 'National map' },
+      { value: 'aerial', label: 'Aerial image' },
+    ],
+    initial.base,
+    onBase,
+  );
+  return section(
+    'Map and overlays',
+    false,
+    field('Base map', base),
+    group('paths', 'Hiking'),
+    group('protected', 'Protected areas (check the rules that apply)'),
+  );
+}
+
+const areaText = (a: AreaInfo): string => {
+  const season = a.period
+    ? `${a.period}${a.inForce ? ' (in force today)' : ' (not in force today)'}`
+    : 'all year';
+  return [a.kind, season, a.rule].filter(Boolean).join(' | ');
 };
 
-function selectOf<T extends string>(
-  options: readonly { value: T; label: string }[],
-  current: T,
-  onChange: (value: T) => void,
-): HTMLSelectElement {
-  const select = el('select');
-  for (const o of options) select.append(el('option', { value: o.value, textContent: o.label }));
-  select.value = current;
-  select.onchange = () => onChange(select.value as T);
-  return select;
-}
-
-function field(label: string, control: HTMLElement, help?: string): HTMLLabelElement {
-  const row = el('label', { className: 'field' }, el('span', { textContent: label }), control);
-  if (help) row.append(el('small', { textContent: help }));
-  return row;
-}
-
-function section(title: string, open: boolean, ...children: Node[]): HTMLDetailsElement {
-  const details = el('details', { open }, el('summary', { textContent: title }), ...children);
-  return details;
-}
-
-/** Builds the side panel: status, legend, and every setting with short explanations. */
+/** Builds the side panel: status, legend, results and every setting with short explanations. */
 export function createPanel(
   parent: HTMLElement,
   initial: CampingSettings,
   handlers: PanelHandlers,
 ): Panel {
-  let settings = initial;
-  let suitability = initial.suitability;
-
   const status = el('p', { className: 'status', textContent: 'Tap the map to choose a spot.' });
   status.setAttribute('role', 'status');
+  const warnings = el('div', { className: 'notice' });
+  warnings.hidden = true;
   const legendBar = el('div', { className: 'legend-bar' });
   const legendWorst = el('span');
   const legendBest = el('span');
@@ -93,18 +195,31 @@ export function createPanel(
     textContent: 'See the panorama from here',
   });
   panorama.hidden = true;
+  const locate = el('button', {
+    type: 'button',
+    className: 'button secondary',
+    textContent: 'Use my location',
+  });
+  locate.onclick = handlers.onLocate;
+
+  // Results.
+  const spotList = el('ol', { className: 'spot-list' });
+  const spots = section('Best spots here', true, spotList);
+  const areaList = el('ul', { className: 'area-list' });
+  const hide = checkRow(
+    'Hide ground where a protection is in force',
+    initial.hideProtected,
+    (hideProtected) => handlers.onModelChange({ hideProtected }),
+    'Protections that apply only in other seasons (like winter refuges in summer) are shown but do not hide anything. Always check the rules of the area yourself.',
+  );
+  const areas = section('Protected areas in this box', false, hide.node, areaList);
 
   // Area and heatmap.
-  const canopy = el('input', { type: 'checkbox', checked: initial.canopy });
-  const canopyRow = el(
-    'label',
-    { className: 'check' },
-    canopy,
-    el('span', {
-      textContent: `Use vegetation height (large download, areas up to ${MAX_CANOPY_AREA_KM} km)`,
-    }),
+  const canopy = checkRow(
+    `Use vegetation height (large download, areas up to ${MAX_CANOPY_AREA_KM} km)`,
+    initial.canopy,
+    (on) => handlers.onAreaChange({ canopy: on }),
   );
-  canopy.onchange = () => handlers.onAreaChange({ canopy: canopy.checked });
   const area = selectOf(
     AREA_SIZES_KM.map((a) => ({ value: String(a), label: `${a} x ${a} km` })),
     String(initial.areaKm),
@@ -129,104 +244,6 @@ export function createPanel(
   });
   opacity.oninput = () => handlers.onViewChange({ opacity: Number(opacity.value) });
 
-  // The pitch model: sliders with the recommended value and a short explanation each.
-  const sliders = new Map<
-    keyof SuitabilityParams,
-    { input: HTMLInputElement; output: HTMLOutputElement }
-  >();
-  const controls = SUITABILITY_CONTROLS.map((c) => {
-    const input = el('input', {
-      type: 'range',
-      min: String(c.min),
-      max: String(c.max),
-      step: String(c.step),
-      value: String(initial.suitability[c.key]),
-    });
-    const output = el('output');
-    const recommended = DEFAULT_SETTINGS.suitability[c.key];
-    const show = () => (output.textContent = `${Number(input.value)}${c.unit}`);
-    show();
-    input.oninput = () => {
-      suitability = { ...suitability, [c.key]: Number(input.value) };
-      show();
-      handlers.onSuitabilityChange(suitability);
-    };
-    sliders.set(c.key, { input, output });
-    const head = el(
-      'div',
-      { className: 'slider-head' },
-      el('span', { textContent: c.label }),
-      output,
-    );
-    return el(
-      'div',
-      { className: 'slider' },
-      head,
-      input,
-      el('small', { textContent: `${c.help} Recommended: ${recommended}${c.unit}.` }),
-    );
-  });
-  const water = el('input', { type: 'checkbox', checked: initial.suitability.excludeWater });
-  water.onchange = () => {
-    suitability = { ...suitability, excludeWater: water.checked };
-    handlers.onSuitabilityChange(suitability);
-  };
-  const reset = el('button', {
-    type: 'button',
-    className: 'button secondary',
-    textContent: 'Use recommended values',
-  });
-  reset.onclick = () => {
-    suitability = DEFAULT_SETTINGS.suitability;
-    for (const [key, s] of sliders) {
-      s.input.value = String(suitability[key]);
-      s.input.dispatchEvent(new Event('input'));
-    }
-    water.checked = suitability.excludeWater;
-    handlers.onSuitabilityChange(suitability);
-  };
-
-  // Map: base layer and overlays.
-  const base = selectOf<BaseMapId>(
-    [
-      { value: 'map', label: 'National map' },
-      { value: 'aerial', label: 'Aerial image' },
-    ],
-    initial.base,
-    (v) => handlers.onViewChange({ base: v }),
-  );
-  const overlayBoxes = new Map<string, HTMLInputElement>();
-  const overlayGroup = (group: 'paths' | 'protected', title: string) =>
-    el(
-      'fieldset',
-      { className: 'overlay-group' },
-      el('legend', { textContent: title }),
-      ...OVERLAYS.filter((o) => o.group === group).map((o) => {
-        const box = el('input', { type: 'checkbox', checked: initial.overlays.includes(o.id) });
-        box.onchange = () => {
-          const on = new Set(settings.overlays);
-          if (box.checked) on.add(o.id);
-          else on.delete(o.id);
-          settings = { ...settings, overlays: [...on] };
-          handlers.onViewChange({ overlays: settings.overlays });
-        };
-        overlayBoxes.set(o.id, box);
-        return el(
-          'label',
-          { className: 'check' },
-          box,
-          el('span', {}, o.label, el('small', { textContent: o.note })),
-        );
-      }),
-    );
-
-  const locate = el('button', {
-    type: 'button',
-    className: 'button secondary',
-    textContent: 'Use my location',
-  });
-  locate.onclick = handlers.onLocate;
-
   const body = el(
     'section',
     { className: 'panel' },
@@ -236,44 +253,32 @@ export function createPanel(
       textContent: 'Find flat, quiet places to camp in Switzerland.',
     }),
     status,
+    warnings,
     legend,
     panorama,
     locate,
+    spots,
+    areas,
     section(
       'Area and heatmap',
       true,
       field('Area size', area, 'The square around the spot you tap.'),
-      canopyRow,
+      canopy.node,
       field('Heatmap', layer),
       field('Colours', palette),
       field('Opacity', opacity),
     ),
-    section(
-      'Tune the pitch',
-      false,
-      ...controls,
-      el(
-        'label',
-        { className: 'check' },
-        water,
-        el(
-          'span',
-          {},
-          'Rule out lakes',
-          el('small', {
-            textContent:
-              'Lakes are perfectly flat in the terrain data, so they would otherwise look ideal.',
-          }),
-        ),
-      ),
-      reset,
+    pitchSection(initial.suitability, (suitability) => handlers.onModelChange({ suitability })),
+    nearbySection(
+      initial.nearby,
+      initial.showDrinking,
+      (nearby) => handlers.onModelChange({ nearby }),
+      (showDrinking) => handlers.onViewChange({ showDrinking }),
     ),
-    section(
-      'Map and overlays',
-      false,
-      field('Base map', base),
-      overlayGroup('paths', 'Hiking'),
-      overlayGroup('protected', 'Protected areas (check the rules that apply)'),
+    mapSection(
+      initial,
+      (base) => handlers.onViewChange({ base }),
+      (overlays) => handlers.onViewChange({ overlays }),
     ),
   );
 
@@ -300,19 +305,38 @@ export function createPanel(
   toggle.onclick = () => setOpen(body.hidden !== false);
 
   parent.append(toggle, body, chip);
-  const narrow = matchMedia('(max-width: 640px)').matches;
-  setOpen(!narrow);
+  setOpen(!matchMedia('(max-width: 640px)').matches);
+
+  const setSpots: Panel['setSpots'] = (items, emptyText = NO_SPOTS) => {
+    if (items.length === 0)
+      return spotList.replaceChildren(el('li', { className: 'empty', textContent: emptyText }));
+    spotList.replaceChildren(
+      ...items.map((s) => {
+        const button = el(
+          'button',
+          { type: 'button', className: 'spot' },
+          el('strong', { textContent: s.title }),
+          el('small', { textContent: s.detail }),
+        );
+        button.onclick = () => handlers.onSpotSelect(s.rank);
+        return el('li', {}, button);
+      }),
+    );
+  };
+  setSpots([]);
 
   return {
     setStatus(text) {
       status.textContent = text;
       chipText.textContent = text;
     },
+    setWarnings(texts) {
+      warnings.replaceChildren(...texts.map((t) => el('p', { textContent: t })));
+      warnings.hidden = texts.length === 0;
+    },
     setLegend(id, paletteId) {
       const def = LAYERS[id];
-      legendBar.style.background = def.fixedColor
-        ? `rgb(${def.fixedColor.join(',')})`
-        : paletteGradientCss(paletteId);
+      legendBar.style.background = def.legend ?? paletteGradientCss(paletteId);
       chipBar.style.background = legendBar.style.background;
       legendWorst.textContent = def.worst;
       legendBest.textContent = def.best;
@@ -321,11 +345,26 @@ export function createPanel(
       panorama.hidden = href === null;
       if (href) panorama.href = href;
     },
+    setSpots,
+    setAreas(list) {
+      areas.querySelector('summary')!.textContent = `Protected areas in this box (${list.length})`;
+      areaList.replaceChildren(
+        ...(list.length === 0
+          ? [el('li', { className: 'empty', textContent: NO_AREAS })]
+          : list.map((a) =>
+              el(
+                'li',
+                {},
+                el('strong', { textContent: a.name }),
+                el('small', { textContent: areaText(a) }),
+              ),
+            )),
+      );
+    },
     setOpen,
     syncFrom(next) {
-      settings = next;
-      canopy.checked = next.canopy;
-      canopy.disabled = next.areaKm > MAX_CANOPY_AREA_KM;
+      canopy.input.checked = next.canopy;
+      canopy.input.disabled = next.areaKm > MAX_CANOPY_AREA_KM;
     },
   };
 }
