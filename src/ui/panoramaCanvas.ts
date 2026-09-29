@@ -483,12 +483,7 @@ export function mountPanoramaCanvas(
     setLabels(peaks) {
       labelPeaks = peaks && peaks.length ? peaks : null;
       // Sized in pixels at the current zoom, so it is neither cramped nor mostly empty sky.
-      const pxPerDegY = initialized ? ppy() : 0;
-      labelBandDeg = !labelPeaks
-        ? 0
-        : pxPerDegY > 0
-          ? Math.min(LABEL_BAND_MAX_DEG, Math.max(LABEL_BAND_MIN_DEG, LABEL_BAND_PX / pxPerDegY))
-          : LABEL_BAND_MAX_DEG / 2;
+      labelBandDeg = labelPeaks ? labelBandFor(initialized ? ppy() : 0) : 0;
       content = sceneAngleRange(scene, labelBandDeg);
       // Tile rows are counted from the content top, so tiles of the old extent are useless.
       cache = new TileCache(scene, content, dpr);
@@ -516,6 +511,12 @@ export function mountPanoramaCanvas(
       controls.remove();
     },
   };
+}
+
+/** Degrees of sky for about five label rows at the given vertical scale (0 = not sized yet). */
+function labelBandFor(pxPerDegY: number): number {
+  if (pxPerDegY <= 0) return LABEL_BAND_MAX_DEG / 2;
+  return Math.min(LABEL_BAND_MAX_DEG, Math.max(LABEL_BAND_MIN_DEG, LABEL_BAND_PX / pxPerDegY));
 }
 
 function zoomButton(text: string, label: string): HTMLButtonElement {

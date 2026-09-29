@@ -53,6 +53,17 @@ export interface PeakCacheBackend {
   set(key: string, peaks: Peak[]): Promise<void>;
 }
 
+export interface PanoramaPeakLoaderOptions {
+  fetchFn?: FetchFn;
+  /** Delay before each retry while the server is busy. */
+  backoffMs?: readonly number[];
+  timeoutMs?: number;
+  backend?: PeakCacheBackend;
+}
+
+/** A panorama-sized response is large; the server's own limit is 25 s. */
+const PANORAMA_TIMEOUT_MS = 40_000;
+
 /**
  * One Overpass request per panorama: every named peak within the radius. Results are cached
  * in memory and in the optional backend, keyed by the rounded observer and radius.
@@ -62,13 +73,17 @@ export class PanoramaPeakLoader {
   private readonly inflight = new Map<string, Promise<Peak[]>>();
   requests = 0;
 
-  constructor(
-    private readonly fetchFn: FetchFn = (url, init) => fetch(url, init),
-    private readonly backoffMs: readonly number[] = [2000, 5000, 10000],
-    /** A panorama-sized response is large; the server's own limit is 25 s. */
-    private readonly timeoutMs = 40_000,
-    private readonly backend?: PeakCacheBackend,
-  ) {}
+  private readonly fetchFn: FetchFn;
+  private readonly backoffMs: readonly number[];
+  private readonly timeoutMs: number;
+  private readonly backend: PeakCacheBackend | undefined;
+
+  constructor(options: PanoramaPeakLoaderOptions = {}) {
+    this.fetchFn = options.fetchFn ?? ((url, init) => fetch(url, init));
+    this.backoffMs = options.backoffMs ?? [2000, 5000, 10000];
+    this.timeoutMs = options.timeoutMs ?? PANORAMA_TIMEOUT_MS;
+    this.backend = options.backend;
+  }
 
   load(lat: number, lon: number, radiusM: number): Promise<Peak[]> {
     const key = panoramaPeakKey(lat, lon, radiusM);

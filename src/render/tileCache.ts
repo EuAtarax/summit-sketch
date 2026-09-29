@@ -28,7 +28,7 @@ export class TileCache {
   private queue = new Map<string, { variant: Variant; level: Level; kx: number; ky: number }>();
   /** Label layouts per candidate list, style, level and exaggeration (shared by all tiles). */
   private readonly layouts = new WeakMap<readonly LabelCandidate[], Map<string, LabeledPeak[]>>();
-  private measureCtx: CanvasRenderingContext2D | null = null;
+  private measureCtx: CanvasRenderingContext2D | undefined;
   /** Tiles rendered so far (for tests and diagnostics). */
   rendered = 0;
 
@@ -144,9 +144,9 @@ export class TileCache {
     if (hit) return hit;
 
     const style = variant.style.labelStyle;
-    this.measureCtx ??= document.createElement('canvas').getContext('2d');
+    this.measureCtx ??= document.createElement('canvas').getContext('2d')!;
     const measure = this.measureCtx;
-    if (measure) measure.font = labelFont(style);
+    measure.font = labelFont(style);
     const layout = layoutLabels(
       peaks,
       {
@@ -154,8 +154,7 @@ export class TileCache {
         exaggeration: variant.exaggeration,
         angleTop: this.content.top,
       },
-      (name) =>
-        measure?.measureText(labelText(style, name)).width ?? name.length * style.fontPx * 0.45,
+      (name) => measure.measureText(labelText(style, name)).width,
       labelMetrics(style),
     );
     perKey.set(key, layout);

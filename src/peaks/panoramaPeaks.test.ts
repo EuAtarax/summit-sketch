@@ -67,7 +67,7 @@ describe('PanoramaPeakLoader', () => {
 
   it('shares one request between nearby observers and repeat calls', async () => {
     const counter = { n: 0 };
-    const loader = new PanoramaPeakLoader(okFetch(counter), []);
+    const loader = new PanoramaPeakLoader({ fetchFn: okFetch(counter), backoffMs: [] });
     expect(panoramaPeakKey(47.4201, 10.9799, 200_000)).toBe(
       panoramaPeakKey(47.4199, 10.9801, 200_000),
     );
@@ -83,7 +83,7 @@ describe('PanoramaPeakLoader', () => {
 
   it('keeps radii apart in the cache', async () => {
     const counter = { n: 0 };
-    const loader = new PanoramaPeakLoader(okFetch(counter), []);
+    const loader = new PanoramaPeakLoader({ fetchFn: okFetch(counter), backoffMs: [] });
     await loader.load(47.42, 10.98, 100_000);
     await loader.load(47.42, 10.98, 200_000);
     expect(counter.n).toBe(2);
@@ -97,7 +97,7 @@ describe('PanoramaPeakLoader', () => {
       set: async (key) => void writes.push(key),
     };
     const counter = { n: 0 };
-    const loader = new PanoramaPeakLoader(okFetch(counter), [], 1000, backend);
+    const loader = new PanoramaPeakLoader({ fetchFn: okFetch(counter), backoffMs: [], backend });
     expect(await loader.load(47.42, 10.98, 200_000)).toEqual(stored);
     expect(counter.n).toBe(0);
     expect(writes).toEqual([]);
@@ -109,7 +109,7 @@ describe('PanoramaPeakLoader', () => {
       get: async () => undefined,
       set: async (key) => void writes.push(key),
     };
-    const loader = new PanoramaPeakLoader(okFetch({ n: 0 }), [], 1000, backend);
+    const loader = new PanoramaPeakLoader({ fetchFn: okFetch({ n: 0 }), backoffMs: [], backend });
     await loader.load(47.42, 10.98, 200_000);
     expect(writes).toEqual([panoramaPeakKey(47.42, 10.98, 200_000)]);
   });
@@ -120,7 +120,7 @@ describe('PanoramaPeakLoader', () => {
       const status = statuses.shift()!;
       return new Response(status === 200 ? JSON.stringify(json) : 'busy', { status });
     };
-    const loader = new PanoramaPeakLoader(fetchFn, [1]);
+    const loader = new PanoramaPeakLoader({ fetchFn, backoffMs: [1] });
     expect(await loader.load(47.42, 10.98, 200_000)).toHaveLength(1);
     expect(loader.requests).toBe(2);
   });
@@ -129,7 +129,7 @@ describe('PanoramaPeakLoader', () => {
     let fail = true;
     const fetchFn: FetchFn = async () =>
       fail ? new Response('nope', { status: 500 }) : new Response(JSON.stringify(json));
-    const loader = new PanoramaPeakLoader(fetchFn, []);
+    const loader = new PanoramaPeakLoader({ fetchFn, backoffMs: [] });
     await expect(loader.load(47.42, 10.98, 200_000)).rejects.toThrow('Overpass HTTP 500');
     fail = false;
     expect(await loader.load(47.42, 10.98, 200_000)).toHaveLength(1);

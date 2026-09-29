@@ -38,12 +38,7 @@ export function mountApp(root: HTMLElement): void {
 
   const engine = new HorizonEngine();
   const peaks = new PeakStore();
-  const panoramaPeaks = new PanoramaPeakLoader(
-    undefined,
-    undefined,
-    undefined,
-    createIndexedDbPeakCache(),
-  );
+  const panoramaPeaks = new PanoramaPeakLoader({ backend: createIndexedDbPeakCache() });
   let selected: SheetSummit | null = null;
   let pickSeq = 0;
   let run: EngineRun | null = null;
