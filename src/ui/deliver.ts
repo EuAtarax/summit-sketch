@@ -43,3 +43,23 @@ export async function deliverImage(blob: Blob, filename: string): Promise<Delive
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
   return 'downloaded';
 }
+
+export type LinkResult = 'shared' | 'copied' | 'cancelled';
+
+/**
+ * Shares the panorama link: the native share sheet on touch devices, the clipboard elsewhere.
+ * The address bar always holds the current link (lat, lon, radius, style, labels).
+ */
+export async function shareLink(url: string, title: string): Promise<LinkResult> {
+  if (prefersShare() && navigator.share) {
+    try {
+      await navigator.share({ url, title });
+      return 'shared';
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return 'cancelled';
+      throw err;
+    }
+  }
+  await navigator.clipboard.writeText(url);
+  return 'copied';
+}

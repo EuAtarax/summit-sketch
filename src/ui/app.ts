@@ -8,6 +8,7 @@ import { PeakStore } from '../peaks/peakStore';
 import { availableStyles, DEFAULT_STYLE_ID } from '../render/styles';
 import { loadChoice, saveChoice } from './stylePicker';
 import { formatCoords } from './format';
+import { isOffline, mountOfflineBanner } from './connectivity';
 import { createLayerSwitcher } from './layerSwitcher';
 import { loadMapLayer, saveMapLayer } from './mapConfig';
 import { createMapPicker } from './mapPicker';
@@ -32,6 +33,9 @@ const MAX_ELE_DEM_DIFF_M = 400;
 const PEAK_TAP_TIMEOUT_MS = 6000;
 const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
 const ELEVATION_ERROR = "Couldn't load elevation data. Check your connection and try again.";
+const ELEVATION_ERROR_OFFLINE =
+  "You're offline and this area isn't saved on your device yet. Connect and try again.";
+const elevationError = () => (isOffline() ? ELEVATION_ERROR_OFFLINE : ELEVATION_ERROR);
 
 export function mountApp(root: HTMLElement): void {
   const mapEl = document.createElement('div');
@@ -41,6 +45,7 @@ export function mountApp(root: HTMLElement): void {
   const topBar = document.createElement('div');
   topBar.className = 'map-top';
   root.replaceChildren(mapEl, topBar, hint);
+  mountOfflineBanner(root);
 
   const engine = new HorizonEngine();
   const peaks = new PeakStore();
@@ -90,6 +95,8 @@ export function mountApp(root: HTMLElement): void {
   const choice = loadChoice(DEBUG ? 'debug' : DEFAULT_STYLE_ID);
   const urlStyle = new URLSearchParams(location.search).get('style');
   if (urlStyle && styles.some((st) => st.id === urlStyle)) choice.styleId = urlStyle;
+  const urlLabels = new URLSearchParams(location.search).get('labels');
+  if (urlLabels === '1' || urlLabels === '0') choice.labels = urlLabels === '1';
   const view = createPanoramaView(
     root,
     () => {
@@ -103,6 +110,8 @@ export function mountApp(root: HTMLElement): void {
       saveChoice(c);
       const url = new URL(location.href);
       url.searchParams.set('style', c.styleId);
+      if (c.labels) url.searchParams.set('labels', '1');
+      else url.searchParams.delete('labels');
       history.replaceState(null, '', url);
     },
     (scene) =>
@@ -188,7 +197,7 @@ export function mountApp(root: HTMLElement): void {
       return true;
     } catch {
       if (seq === pickSeq) {
-        sheet.showError(ELEVATION_ERROR, () => void pick(lat, lon, zoom, peakRadiusM));
+        sheet.showError(elevationError(), () => void pick(lat, lon, zoom, peakRadiusM));
       }
       return false;
     }
@@ -235,7 +244,7 @@ export function mountApp(root: HTMLElement): void {
     } catch (err) {
       if (err instanceof CancelledComputeError || run !== current) return;
       console.error(err);
-      view.showError(ELEVATION_ERROR, () => void showView());
+      view.showError(elevationError(), () => void showView());
     }
   }
 

@@ -62,11 +62,13 @@ The horizon shape and the direction of major peaks should match.
 
 
 ## Phase 5: PWA + polish
-- [ ] Installable PWA; runtime caching of terrain tiles (Cache API, ~200 MB budget with eviction)
-- [ ] Place and peak search via Nominatim (submit only)
-- [ ] Shareable URLs: `?lat=…&lon=…&style=…&r=…`
-- [ ] Clear empty, loading, offline, and error states
-- [ ] Map picker layer choice: **normal** (OSM standard), **terrain** (e.g. OpenTopoMap) and **satellite**. Only free sources whose terms allow this use (check the license first; e.g. EOX Sentinel-2 cloudless is non-commercial with attribution, Esri World Imagery has its own terms). Remember the choice, and show each layer's attribution.
+- [x] Installable PWA; runtime caching of terrain tiles (Cache API, ~200 MB budget with eviction)
+- [x] Place and peak search via Nominatim (submit only)
+- [x] Shareable URLs: `?lat=…&lon=…&style=…&r=…`
+- [x] Clear empty, loading, offline, and error states
+- [x] Map picker layer choice: **normal** (OSM standard), **terrain** (e.g. OpenTopoMap) and **satellite**. Only free sources whose terms allow this use (check the license first; e.g. EOX Sentinel-2 cloudless is non-commercial with attribution, Esri World Imagery has its own terms). Remember the choice, and show each layer's attribution.
+
+**Implementation notes:** `vite-plugin-pwa` (dev dependency only, script registration) precaches the app shell and caches elevation tiles CacheFirst, capped at 2500 entries (about 200 MB) with eviction on quota errors; verified offline in a real browser (a panorama opened before rebuilds offline). Map tiles are not cached by the service worker: cross-origin `<img>` tiles are opaque responses that count about 7 MB each against the quota, so the browser's HTTP cache handles them. Search runs on submit only, throttled to 1 request/s, cached and cancelable; a peak result opens as a summit, other places center the map. The link (lat, lon, r, style, labels) is always in the address bar; the viewer's Link button shares it (native sheet on touch devices, clipboard elsewhere). **Satellite license:** EOX Sentinel-2 cloudless is CC BY-NC-SA 4.0, non-commercial only, so the app must stay free with no ads or paid tier. Esri World Imagery was rejected (its terms expect an ArcGIS account for third-party apps). Overpass answers 429/504 without CORS headers, so the browser reports those as a network error; the client retries those with backoff.
 
 ## Phase 5b: Sun path
 The sun's path across the panorama, for the chosen day, as an overlay. Pure math in `geo/` (or a new `sun/`), drawn like the compass strip and labels, so it needs no scene recompute.

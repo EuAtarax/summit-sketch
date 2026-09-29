@@ -374,6 +374,48 @@ input:focus-visible + *,
   color: var(--snow);
 }
 
+.offline-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2000;
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
+  background: var(--ink);
+  color: var(--snow);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.offline-banner[hidden] {
+  display: none;
+}
+
+.link-note {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  color: #56606a;
+}
+
+.link-button {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+@media (max-width: 520px) {
+  .style-bar {
+    flex-wrap: wrap;
+  }
+
+  .style-list {
+    flex: 1 1 100%;
+  }
+
+  .style-bar > button {
+    flex: 1;
+  }
+}
+
 .map-top {
   position: absolute;
   top: max(12px, env(safe-area-inset-top));
