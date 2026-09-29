@@ -117,6 +117,6 @@ export const mistyStyle: PanoramaStyle = {
       ctx.fillStyle = mix(p.sea, p.haze, t);
       ctx.fillRect(x, yTop, w, yBottom - yTop);
     });
-    drawPeakLabels(ctx, v, opts.labels, LABEL_STYLE);
+    drawPeakLabels(ctx, v, opts.labels, LABEL_STYLE, opts.labelScale);
   },
 };

@@ -1,4 +1,11 @@
-import type { LabelMetrics, LabeledPeak } from './labels';
+import {
+  labelFont,
+  labelMetrics,
+  labelText,
+  type LabelMetrics,
+  type LabelStyle,
+  type LabeledPeak,
+} from './labels';
 
 /** A peak to label, already in priority order (most important first). */
 export interface LabelCandidate {
@@ -6,6 +13,9 @@ export interface LabelCandidate {
   name: string;
   az: number;
   angle: number;
+  /** Summit elevation and distance from the observer, meters (shown when a label is tapped). */
+  elev: number;
+  dist: number;
 }
 
 /** The pixel frame labels are laid out in: the tile space of one zoom level. */
@@ -166,6 +176,8 @@ export function layoutLabels(
       name: c.name,
       az: c.az,
       angle: c.angle,
+      elev: c.elev,
+      dist: c.dist,
       box: { dx: spot.cx - summitX - w / 2, dy: spot.top - summitY, w, h: metrics.height },
     });
   }
@@ -193,4 +205,23 @@ function findSpot(
     if (!collides(candidate, placed, period, metrics.spacing)) return candidate;
   }
   return null;
+}
+
+/**
+ * Lays labels out with a style's font, measured on a 2D context. Used by the viewer tiles
+ * and by export, so both place labels the same way.
+ */
+export function layoutStyleLabels(
+  candidates: readonly LabelCandidate[],
+  style: LabelStyle,
+  frame: LayoutFrame,
+  measureCtx: CanvasRenderingContext2D,
+): LabeledPeak[] {
+  measureCtx.font = labelFont(style);
+  return layoutLabels(
+    candidates,
+    frame,
+    (name) => measureCtx.measureText(labelText(style, name)).width,
+    labelMetrics(style),
+  );
 }

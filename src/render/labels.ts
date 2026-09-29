@@ -1,5 +1,31 @@
 import type { ViewTransform } from './viewTransform';
 
+/** Smallest tap target, CSS px (the UI rule for touch targets). */
+export const MIN_TOUCH_PX = 44;
+
+/**
+ * The label under a screen point, in priority order (labels are sorted best first). Boxes
+ * smaller than a touch target are grown around their center. `scale` converts layout px to
+ * screen px and `anchorOf` gives a label's summit position on screen.
+ */
+export function hitTestLabel(
+  labels: readonly LabeledPeak[],
+  x: number,
+  y: number,
+  anchorOf: (label: LabeledPeak) => { x: number; y: number },
+  scale: number,
+): LabeledPeak | null {
+  for (const label of labels) {
+    const a = anchorOf(label);
+    const w = Math.max(label.box.w * scale, MIN_TOUCH_PX);
+    const h = Math.max(label.box.h * scale, MIN_TOUCH_PX);
+    const cx = a.x + (label.box.dx + label.box.w / 2) * scale;
+    const cy = a.y + (label.box.dy + label.box.h / 2) * scale;
+    if (Math.abs(x - cx) <= w / 2 && Math.abs(y - cy) <= h / 2) return label;
+  }
+  return null;
+}
+
 /** Narrow face so more labels fit; bundled via @fontsource (see main.ts). */
 export const LABEL_FONT_FAMILY = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif';
 
@@ -33,6 +59,8 @@ export interface LabeledPeak {
   name: string;
   az: number;
   angle: number;
+  elev: number;
+  dist: number;
   box: LabelBox;
 }
 
@@ -43,6 +71,20 @@ export interface LabelMetrics {
   leaderMin: number;
   /** Empty space kept between neighbouring labels. */
   spacing: number;
+}
+
+/** The style with fonts and lines scaled, for images much larger than the screen. */
+export function scaleLabelStyle(style: LabelStyle, k: number): LabelStyle {
+  if (k === 1) return style;
+  return {
+    ...style,
+    fontPx: style.fontPx * k,
+    leader: {
+      ...style.leader,
+      width: style.leader.width * k,
+      dash: style.leader.dash.map((d) => d * k),
+    },
+  };
 }
 
 export function labelMetrics(style: LabelStyle): LabelMetrics {
@@ -79,9 +121,12 @@ export function drawPeakLabels(
   ctx: CanvasRenderingContext2D,
   view: ViewTransform,
   labels: readonly LabeledPeak[] | null | undefined,
-  style: LabelStyle,
+  baseStyle: LabelStyle,
+  /** Size factor for large exports; 1 on screen. */
+  scale = 1,
 ): void {
   if (!labels?.length) return;
+  const style = scaleLabelStyle(baseStyle, scale);
   const m = labelMetrics(style);
   ctx.save();
   ctx.font = labelFont(style);

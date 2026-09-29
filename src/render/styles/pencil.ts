@@ -134,6 +134,6 @@ export const pencilStyle: PanoramaStyle = {
       }
     }
 
-    drawPeakLabels(ctx, v, opts.labels, LABEL_STYLE);
+    drawPeakLabels(ctx, v, opts.labels, LABEL_STYLE, opts.labelScale);
   },
 };

@@ -1,5 +1,6 @@
 import type { PanoramaScene } from '../horizon/scene';
 import type { LabelCandidate } from '../render/labelLayout';
+import { hitTestLabel, type LabeledPeak } from '../render/labels';
 import type { PanoramaStyle, RenderOptions } from '../render/style';
 import { TileCache, variantKey, type Variant } from '../render/tileCache';
 import {
@@ -11,6 +12,19 @@ import {
 } from '../render/tiles';
 import { gridStep, wrap180, wrap360 } from '../render/viewTransform';
 
+/** What the viewer currently shows, for exporting "the current view". */
+export interface Viewport {
+  az: number;
+  fovDeg: number;
+  angleTop: number;
+  angleBottom: number;
+  /** Vertical extent of everything that is drawn. */
+  content: { top: number; bottom: number };
+  exaggeration: number;
+  /** Device pixels per degree on screen. */
+  devicePxPerDeg: number;
+}
+
 export interface PanoramaCanvas {
   /** Points the view at an azimuth (and optionally angle and horizontal field of view). */
   lookAt(az: number, angle?: number, fovDeg?: number): void;
@@ -21,8 +35,11 @@ export interface PanoramaCanvas {
    * the summits, so this changes the drawn area and re-frames the horizon.
    */
   setLabels(peaks: readonly LabelCandidate[] | null): void;
+  /** Highlights a label in trail red (null clears it). */
+  selectLabel(id: number | null): void;
   /** Current view center azimuth and horizontal field of view. */
   readonly heading: { az: number; fov: number };
+  readonly viewport: Viewport;
   /** The exaggeration 'auto' resolves to for this scene and screen. */
   readonly autoExaggeration: number;
   /** Time from the last setVariant until the view was fully drawn (ms), for tests. */
@@ -36,6 +53,9 @@ const DEFAULT_FOV_DEG = 60;
 const MAX_FOV_DEG = 180;
 const MAX_PX_PER_DEG = 80;
 const COMPASS_PX = 28;
+/** A press that moves less than this and ends within this time is a tap. */
+const TAP_SLOP_PX = 8;
+const TAP_MAX_MS = 500;
 /** Sky added above the highest crest while labels are shown: about five label rows. */
 const LABEL_BAND_PX = 120;
 const LABEL_BAND_MIN_DEG = 2;
@@ -64,6 +84,8 @@ export function mountPanoramaCanvas(
   initial: { style: PanoramaStyle; opts: RenderOptions; exaggeration: number | 'auto' },
   /** Called shortly after the user stops panning or zooming. */
   onIdle: () => void = () => {},
+  /** Called when the user taps a label, or taps elsewhere (null). */
+  onLabelTap: (label: LabeledPeak | null) => void = () => {},
 ): PanoramaCanvas {
   const canvas = document.createElement('canvas');
   canvas.className = 'pano-canvas';
@@ -94,6 +116,8 @@ export function mountPanoramaCanvas(
   let requested = initial;
   let labelPeaks: readonly LabelCandidate[] | null = null;
   let labelBandDeg = 0;
+  let selectedId: number | null = null;
+  let drawnLevel: Level | null = null;
   let variant: Variant = { style: initial.style, opts: initial.opts, exaggeration: 1 };
 
   let w = 0; // CSS px
@@ -251,7 +275,9 @@ export function mountPanoramaCanvas(
     }
 
     cache.reserve(tilesThisFrame);
+    drawnLevel = level;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawSelectedLabel(level);
     drawAngleLabels(angleTop, plotTop);
     drawCompass();
 
@@ -261,6 +287,52 @@ export function mountPanoramaCanvas(
         requestDraw();
       });
     }
+  }
+
+  /** Layout px (at the drawn level) to screen CSS px. */
+  const layoutScale = (level: Level) => (ppd * dpr) / level.ppd;
+
+  /** Where a label's summit is on screen, CSS px. */
+  function anchorOf(l: LabeledPeak) {
+    const cy = COMPASS_PX + (h - COMPASS_PX) / 2;
+    return { x: w / 2 + wrap180(l.az - az) * ppd, y: cy - (l.angle - angle) * ppy() };
+  }
+
+  function drawSelectedLabel(level: Level) {
+    if (selectedId === null) return;
+    const label = cache.labelLayout(variant, level).find((l) => l.id === selectedId);
+    if (!label) return;
+    const a = anchorOf(label);
+    const k = layoutScale(level);
+    const pad = 3;
+    ctx.strokeStyle = '#C8102E';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(
+      a.x + label.box.dx * k - pad,
+      a.y + label.box.dy * k - pad,
+      label.box.w * k + 2 * pad,
+      label.box.h * k + 2 * pad,
+      5,
+    );
+    ctx.stroke();
+    ctx.fillStyle = '#C8102E';
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  function handleTap(x: number, y: number) {
+    const labels = drawnLevel ? cache.labelLayout(variant, drawnLevel) : [];
+    const hit = drawnLevel ? hitTestLabel(labels, x, y, anchorOf, layoutScale(drawnLevel)) : null;
+    // Taps on the compass strip are not taps on the panorama.
+    if (y < COMPASS_PX) return;
+    selectedId = hit?.id ?? null;
+    requestDraw();
+    onLabelTap(hit);
   }
 
   function drawCompass() {
@@ -347,10 +419,15 @@ export function mountPanoramaCanvas(
     };
   }
 
+  /** A press that has not moved or lasted long yet may become a tap. */
+  let tap: { x: number; y: number; t: number } | null = null;
+
   const onPointerDown = (e: PointerEvent) => {
     canvas.setPointerCapture(e.pointerId);
     stopInertia();
-    pointers.set(e.pointerId, localPoint(e));
+    const start = localPoint(e);
+    tap = pointers.size === 0 ? { ...start, t: e.timeStamp } : null;
+    pointers.set(e.pointerId, start);
     samples = [];
   };
 
@@ -358,6 +435,8 @@ export function mountPanoramaCanvas(
     const prev = pointers.get(e.pointerId);
     if (!prev) return;
     const p = localPoint(e);
+    if (tap && (pointers.size > 1 || Math.hypot(p.x - tap.x, p.y - tap.y) > TAP_SLOP_PX))
+      tap = null;
     if (pointers.size === 1) {
       pan(p.x - prev.x, p.y - prev.y);
       pointers.set(e.pointerId, p);
@@ -373,7 +452,11 @@ export function mountPanoramaCanvas(
   };
 
   const onPointerUp = (e: PointerEvent) => {
+    const wasTap =
+      e.type === 'pointerup' && tap !== null && e.timeStamp - tap.t < TAP_MAX_MS ? tap : null;
+    tap = null;
     pointers.delete(e.pointerId);
+    if (wasTap) handleTap(wasTap.x, wasTap.y);
     if (pointers.size > 0 || reducedMotion) {
       samples = [];
       return;
@@ -460,6 +543,18 @@ export function mountPanoramaCanvas(
     get heading() {
       return { az, fov: w / ppd };
     },
+    get viewport() {
+      const half = (h - COMPASS_PX) / 2 / ppy();
+      return {
+        az,
+        fovDeg: w / ppd,
+        angleTop: angle + half,
+        angleBottom: angle - half,
+        content,
+        exaggeration: variant.exaggeration,
+        devicePxPerDeg: ppd * dpr,
+      };
+    },
     get autoExaggeration() {
       return autoE;
     },
@@ -482,6 +577,7 @@ export function mountPanoramaCanvas(
     },
     setLabels(peaks) {
       labelPeaks = peaks && peaks.length ? peaks : null;
+      if (!labelPeaks) selectedId = null;
       // Sized in pixels at the current zoom, so it is neither cramped nor mostly empty sky.
       labelBandDeg = labelPeaks ? labelBandFor(initialized ? ppy() : 0) : 0;
       content = sceneAngleRange(scene, labelBandDeg);
@@ -492,6 +588,10 @@ export function mountPanoramaCanvas(
       if (!initialized) return;
       applyVariant();
       frameHorizon();
+      requestDraw();
+    },
+    selectLabel(id) {
+      selectedId = id;
       requestDraw();
     },
     lookAt(toAz, toAngle, fovDeg) {

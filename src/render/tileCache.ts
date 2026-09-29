@@ -1,6 +1,6 @@
 import type { PanoramaScene } from '../horizon/scene';
-import { layoutLabels, type LabelCandidate } from './labelLayout';
-import { labelFont, labelMetrics, labelText, type LabeledPeak } from './labels';
+import { layoutStyleLabels, type LabelCandidate } from './labelLayout';
+import type { LabeledPeak } from './labels';
 import { optionsKey, type PanoramaStyle, type RenderOptions } from './style';
 import { TILE_PX, type Level, type TileRef } from './tiles';
 import { createViewTransform } from './viewTransform';
@@ -128,6 +128,11 @@ export class TileCache {
     return canvas;
   }
 
+  /** The label layout a variant uses at a level (empty without labels). */
+  labelLayout(variant: Variant, level: Level): readonly LabeledPeak[] {
+    return variant.labelPeaks ? this.labelsFor(variant, variant.labelPeaks, level) : [];
+  }
+
   /**
    * Labels are placed once per (style, level, exaggeration) in absolute az/angle space, so
    * every tile draws the same layout and labels line up across tile edges and the seam.
@@ -143,19 +148,16 @@ export class TileCache {
     const hit = perKey.get(key);
     if (hit) return hit;
 
-    const style = variant.style.labelStyle;
     this.measureCtx ??= document.createElement('canvas').getContext('2d')!;
-    const measure = this.measureCtx;
-    measure.font = labelFont(style);
-    const layout = layoutLabels(
+    const layout = layoutStyleLabels(
       peaks,
+      variant.style.labelStyle,
       {
         pxPerDeg: level.ppd / this.dpr,
         exaggeration: variant.exaggeration,
         angleTop: this.content.top,
       },
-      (name) => measure.measureText(labelText(style, name)).width,
-      labelMetrics(style),
+      this.measureCtx,
     );
     perKey.set(key, layout);
     return layout;
