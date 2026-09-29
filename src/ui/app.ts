@@ -8,7 +8,11 @@ import { PeakStore } from '../peaks/peakStore';
 import { availableStyles, DEFAULT_STYLE_ID } from '../render/styles';
 import { loadChoice, saveChoice } from './stylePicker';
 import { formatCoords } from './format';
+import { createLayerSwitcher } from './layerSwitcher';
+import { loadMapLayer, saveMapLayer } from './mapConfig';
 import { createMapPicker } from './mapPicker';
+import { createSearchBar } from './searchBar';
+import { NominatimClient } from '../search/nominatim';
 import { createPanoramaView } from './panoramaView';
 import {
   createSummitSheet,
@@ -34,7 +38,9 @@ export function mountApp(root: HTMLElement): void {
   mapEl.className = 'map';
   const hint = document.createElement('p');
   hint.className = 'map-hint';
-  root.replaceChildren(mapEl, hint);
+  const topBar = document.createElement('div');
+  topBar.className = 'map-top';
+  root.replaceChildren(mapEl, topBar, hint);
 
   const engine = new HorizonEngine();
   const peaks = new PeakStore();
@@ -54,7 +60,22 @@ export function mountApp(root: HTMLElement): void {
       },
     },
     PEAK_ZOOM,
+    loadMapLayer(),
   );
+  const nominatim = new NominatimClient();
+  createSearchBar(
+    topBar,
+    (query) => nominatim.search(query),
+    (place) => {
+      // A peak opens as a summit (snapped, with its OSM name); any other place just centers the map.
+      picker.focus(place.lat, place.lon, place.zoom);
+      if (place.isPeak) void pick(place.lat, place.lon, place.zoom, 150);
+    },
+  );
+  createLayerSwitcher(topBar, loadMapLayer(), (id) => {
+    picker.setBaseLayer(id);
+    saveMapLayer(id);
+  });
   const sheet = createSummitSheet(root, {
     onShowView: () => void showView(),
     onClose: () => {

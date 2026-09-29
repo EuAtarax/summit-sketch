@@ -2,13 +2,15 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { BBox, Peak } from '../peaks/overpass';
 import { attributionHtml } from './attribution';
-import { MAP_TILES } from './mapConfig';
+import { layerConfig, type MapLayerId } from './mapConfig';
 
 export interface MapPicker {
   /** Shows the tapped point (pending) or the chosen summit/point (selected). */
   setSelection(lat: number, lon: number, state: 'pending' | 'selected'): void;
   clearSelection(): void;
   focus(lat: number, lon: number, zoom: number): void;
+  /** Switches the base map (normal, terrain, satellite). */
+  setBaseLayer(id: MapLayerId): void;
   /** Shows selectable OSM peaks (only drawn from peaksMinZoom on). */
   setPeaks(peaks: readonly Peak[]): void;
   readonly zoom: number;
@@ -25,6 +27,7 @@ export function createMapPicker(
     onViewChange: (bounds: BBox, zoom: number) => void;
   },
   peaksMinZoom: number,
+  initialLayer: MapLayerId,
 ): MapPicker {
   const map = L.map(container, {
     center: [25, 10],
@@ -38,7 +41,20 @@ export function createMapPicker(
     .attribution({ prefix: false, position: 'bottomleft' })
     .addAttribution(attributionHtml())
     .addTo(map);
-  L.tileLayer(MAP_TILES.url, { maxZoom: MAP_TILES.maxZoom }).addTo(map);
+  let baseLayer: L.TileLayer | null = null;
+  const showBaseLayer = (id: MapLayerId) => {
+    const cfg = layerConfig(id);
+    baseLayer?.remove();
+    baseLayer = L.tileLayer(cfg.url, {
+      maxZoom: cfg.maxZoom,
+      maxNativeZoom: cfg.maxNativeZoom,
+      attribution: cfg.attribution,
+      ...(cfg.subdomains ? { subdomains: cfg.subdomains } : {}),
+    })
+      .addTo(map)
+      .bringToBack();
+  };
+  showBaseLayer(initialLayer);
 
   // Peaks are drawn on one canvas; many markers stay cheap.
   const peakRenderer = L.canvas({ padding: 0.2 });
@@ -95,6 +111,7 @@ export function createMapPicker(
     focus(lat, lon, zoom) {
       map.setView([lat, lon], zoom);
     },
+    setBaseLayer: showBaseLayer,
     setPeaks(peaks) {
       peakLayer.clearLayers();
       for (const p of peaks) {

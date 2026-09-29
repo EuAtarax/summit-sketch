@@ -78,7 +78,7 @@ input:focus-visible + *,
 .map-hint {
   position: absolute;
   z-index: 500;
-  top: max(12px, env(safe-area-inset-top));
+  top: calc(max(12px, env(safe-area-inset-top)) + 60px);
   left: 50%;
   transform: translateX(-50%);
   padding: 10px 16px;
@@ -372,6 +372,142 @@ input:focus-visible + *,
 .adjust-button[aria-pressed='true'] {
   background: var(--ink);
   color: var(--snow);
+}
+
+.map-top {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  z-index: 1000;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+.map-top > * {
+  pointer-events: auto;
+}
+
+.search {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  border-radius: 8px;
+  background: rgb(244 246 247 / 0.96);
+  box-shadow: 0 1px 6px rgb(31 42 51 / 0.3);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px 0 0 8px;
+  background: transparent;
+  font-size: 1rem;
+}
+
+.search-submit {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--trail-red);
+  color: var(--snow);
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 6px 0 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 50vh;
+  overflow-y: auto;
+  border-radius: 8px;
+  background: var(--snow);
+  box-shadow: 0 2px 10px rgb(31 42 51 / 0.35);
+}
+
+.search-results[hidden] {
+  display: none;
+}
+
+.search-results button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+}
+
+.search-results button span {
+  color: #56606a;
+  font-size: 0.8125rem;
+}
+
+.search-message {
+  padding: 10px;
+  font-size: 0.9375rem;
+}
+
+.layer-switcher {
+  position: relative;
+  margin-left: auto;
+}
+
+.layer-button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: rgb(244 246 247 / 0.96);
+  box-shadow: 0 1px 6px rgb(31 42 51 / 0.3);
+  font-weight: 700;
+}
+
+.layer-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 6px;
+  display: grid;
+  min-width: 140px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--snow);
+  box-shadow: 0 2px 10px rgb(31 42 51 / 0.35);
+}
+
+.layer-menu[hidden] {
+  display: none;
+}
+
+.layer-menu button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+}
+
+.layer-menu button[aria-checked='true'] {
+  background: var(--ink);
+  color: var(--snow);
+  font-weight: 700;
 }
 
 .export-button {
