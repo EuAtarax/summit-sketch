@@ -88,7 +88,6 @@ The sun's path across the panorama, for the chosen day, as an overlay. Pure math
 - [ ] 360° via cube camera → equirectangular strip, feeding the same viewer and export
 - [ ] Optional later: satellite imagery draped on the terrain, only if a free source with a compatible license is found (check the license first)
 
-## Later (to discuss once Phases 1–7 are done)
 ## Camping spot finder (needs examination and planning first)
 Find suitable places to camp in the wild: flat enough for a small 2-person tent, on or near a trail. This is not scheduled. It starts with an examination phase whose result decides whether and how to build it; nothing below is implemented before that decision.
 
