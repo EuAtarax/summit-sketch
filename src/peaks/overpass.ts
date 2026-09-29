@@ -18,14 +18,18 @@ export interface BBox {
   east: number;
 }
 
-/** Named peaks only, as the data policy in CLAUDE.md asks. */
-export function peakQuery(b: BBox): string {
+/**
+ * Named peaks only, as the data policy in CLAUDE.md asks. Several boxes are unioned in one
+ * request (a panorama that crosses the antimeridian needs two).
+ */
+export function peakQuery(boxes: BBox | readonly BBox[]): string {
   const f = (x: number) => x.toFixed(5);
-  return (
-    `[out:json][timeout:25];` +
-    `node["natural"="peak"]["name"](${f(b.south)},${f(b.west)},${f(b.north)},${f(b.east)});` +
-    `out body;`
+  const list = 'south' in boxes ? [boxes] : boxes;
+  const nodes = list.map(
+    (b) => `node["natural"="peak"]["name"](${f(b.south)},${f(b.west)},${f(b.north)},${f(b.east)});`,
   );
+  const body = nodes.length === 1 ? nodes[0]! : `(${nodes.join('')});`;
+  return `[out:json][timeout:25];${body}out body;`;
 }
 
 /**

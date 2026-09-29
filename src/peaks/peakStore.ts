@@ -1,12 +1,11 @@
 import { lonLatToTile, tileToLonLat } from '../geo/tiles';
-import { OVERPASS_URL, parsePeaks, peakQuery, type BBox, type Peak } from './overpass';
+import type { BBox, Peak } from './overpass';
+import { fetchPeaksFromOverpass, type FetchFn } from './overpassFetch';
+
+export type { FetchFn };
 
 /** Peaks are fetched per slippy tile at this zoom (~40 × 30 km in the Alps). */
 export const PEAK_TILE_ZOOM = 10;
-
-export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
-
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Tile keys (x/y at PEAK_TILE_ZOOM) covering a bounding box. */
 export function peakTilesFor(b: BBox): { x: number; y: number }[] {
@@ -79,19 +78,11 @@ export class PeakStore {
     return p;
   }
 
-  private async fetchTile(b: BBox): Promise<Peak[]> {
-    for (let attempt = 0; ; attempt++) {
-      this.requests++;
-      const res = await this.fetchFn(OVERPASS_URL, {
-        method: 'POST',
-        body: new URLSearchParams({ data: peakQuery(b) }),
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
-      if (res.ok) return parsePeaks(await res.json());
-      const busy = res.status === 429 || res.status === 504 || res.status === 503;
-      const delay = this.backoffMs[attempt];
-      if (!busy || delay === undefined) throw new Error(`Overpass HTTP ${res.status}`);
-      await wait(delay);
-    }
+  private fetchTile(b: BBox): Promise<Peak[]> {
+    return fetchPeaksFromOverpass(
+      b,
+      { fetchFn: this.fetchFn, backoffMs: this.backoffMs, timeoutMs: this.timeoutMs },
+      () => this.requests++,
+    );
   }
 }
