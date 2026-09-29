@@ -130,16 +130,42 @@ Bring routes into the app, all client-side (no upload, no account).
 - [ ] Open questions: file size limits on phones, how to mark hidden stretches of a track, whether routes can be drawn in the app, and privacy wording (data never leaves the device).
 
 ## Camping spot finder (needs examination and planning first)
-Find suitable places to camp in the wild: flat enough for a small 2-person tent, on or near a trail. This is not scheduled. It starts with an examination phase whose result decides whether and how to build it; nothing below is implemented before that decision.
+Find suitable places to camp in the wild: flat enough for a small 2-person tent, near a trail, with water and a good morning sun. Nothing here is built before the spike below.
 
-**Where it lives (recommendation, to confirm after the examination):** start as a separate module in this repo (`src/camping/`, own entry point and map mode), reusing `geo/`, `terrain/` (the `ElevationSource` and tile cache), the map picker and the horizon engine. The panorama app stays focused. If the finder grows its own UX, data layers and legal content, split it into a second app in a workspace, sharing `geo/` and `terrain/` as packages. The strongest reason to stay close is the overlap: "will I get the sunrise from this spot?" and "what does the view look like?" are exactly what the horizon engine and the sun path answer.
+**Decisions so far**
+- **Switzerland first, summer only** (Alps, no snow cover, glaciers or avalanche logic at first). Other countries later behind a provider interface.
+- **Two ways in:** an area on the map (heatmap of suitability plus a ranked list) and, when a GPX track is provided, a corridor along it ("spots between km 12 and 18"). Public hiking paths are linked in the same way (see the GPX section).
+- **Legal and protected areas are flagged, with a toggle** (show flags, and hide flagged spots). The app never states that a spot is legal or safe.
+- **Drinking water sources** are a map layer of their own and an input to the ranking.
+- **Test area:** Leuggelenstock and Ijenstock (spelled like this by swisstopo; GL, Glarus Sud, about 46.99 N, 9.03 E, near Schwanden GL). It has protected wildlife zones nearby, which exercises the flags.
+- **Where it lives:** a separate module in this repo (`src/camping/`, own entry and map mode) reusing the map picker, tile cache and horizon engine; split into a second app only if it grows its own UX and content.
 
-**Examination (a spike, roughly one to two sessions):**
-- [ ] **Terrain resolution.** Terrarium tiles reach z15 (about 5 m per pixel at the equator) but the underlying data is 10-30 m, so a tent pitch (about 3 x 3 m of gentle slope) is below what it can resolve. Measure it: compute slope statistics on known campsites (OSM `tourism=camp_site`, `camp_pitch`, known wild spots) against random terrain, and see whether slope alone separates them. Compare with national high-resolution open DEMs (e.g. swissALTI3D, IGN RGE ALTI, USGS 3DEP, 1-10 m) to quantify what is lost with a global source. Any regional source breaks "worldwide" and must stay optional, behind the `ElevationSource` interface.
-- [ ] **Candidate criteria** and how to score them: slope (threshold and minimum contiguous flat area), distance to a trail (OSM `highway=path|footway|track`, 5-300 m), water nearby (`natural=water`, `waterway=*`, but not in a drainage bottom or a flood plain), exposure (wind, from topographic openness computed with the horizon code), and terrain hazards (below steep slopes and gullies: rockfall, avalanche runout, snow-covered ground above the snowline).
-- [ ] **Views and light.** Sunrise and sunset visibility from the spot (depends on the sun path phase and the horizon engine), and view quality (openness, distance to the horizon).
-- [ ] **Legal and safety data.** Local wild-camping law differs by country and even by valley, and it is out of scope to decide. Investigate what is freely available to at least flag conflicts (OSM `boundary=protected_area`, `leisure=nature_reserve`, `access=private`, `tourism=camp_site` nearby) and how to word a clear, honest disclaimer. The app must never present a spot as legal or safe.
-- [ ] **Compute budget.** Area analysis reads many more tiles than a panorama. Estimate tiles and time for a 5 km and a 20 km search area on a mid-range phone, and decide the cell size, the worker split and the caching.
-- [ ] **Presentation.** Heatmap layer on the map, ranked list of candidate spots with a why (slope, trail distance, sunrise), and "show the view from here" opening the panorama for that spot.
-- [ ] **Deliverable:** a short write-up in `docs/` with the measurements, the chosen approach or a no-go, a phase breakdown with acceptance criteria, and the app-or-module decision.
+**What the Swiss data makes possible (checked from a browser, all CORS-open, free including commercial use, citation "© swisstopo")**
+- **swissALTI3D**: 0.5 m and 2 m terrain model, one Cloud-Optimized GeoTIFF per 1 km tile in LV95 (EPSG:2056), found through the STAC API (`data.geo.admin.ch/api/stac/v0.9/collections/ch.swisstopo.swissalti3d`). A 2 m tile is 500 x 500 float32 (about 1.2 MB), tiled 128 x 128 with LZW compression, and range requests work, so a corridor along a track needs only the blocks it touches. At 2 m a 3 x 3 m pitch is about two cells, so the resolution problem of the global data (10-30 m) goes away here.
+- **swissSURFACE3D** raster (0.5 m surface model, 2017): surface minus terrain gives a canopy and object height (trees, shrubs, boulders, huts).
+- **Ground type from the terrain itself:** canopy height (forest, shrub) plus surface roughness of the 0.5 m terrain (blocky scree and rock are rough, meadow is smooth, tussocks and hollows show as small-scale relief). This replaces an external land-cover source for the first version; ESA WorldCover stays the global fallback.
+- **Maps:** swisstopo WMTS tiles (`wmts.geo.admin.ch`: national map, aerial imagery, and the hiking-trail overlay `ch.swisstopo.swisstlm3d-wanderwege`) all send CORS headers, so they can be a map layer and an overlay.
+- **Protected areas:** the BAFU layers through `api3.geo.admin.ch/rest/services/all/MapServer/identify` return attributes and geometry with CORS. Example: wildlife quiet zones (`ch.bafu.wrz-wildruhezonen_portal`) carry a protection period (e.g. 21.12.-30.04. or 01.04.-30.06.), the rule text and the canton, so flags can be season-aware. Other layers to add: hunting bans, floodplains, moors and moorland landscapes, the Swiss National Park (strict no-camping).
+- **Trails and water:** OSM through Overpass (`highway=path|footway|track|bridleway`, `route=hiking`, `waterway`, `natural=water`) as the first source, since the infrastructure exists; whether the swisstopo trail layer returns usable vectors through `identify` is a spike question.
+- **Drinking water:** OSM `amenity=drinking_water`, `natural=spring` (with `drinking_water=yes` where tagged), `man_made=water_tap`, fountains, and alpine huts (`tourism=alpine_hut`). Shown as a layer with distance to the spot. Wording matters: untreated spring and stream water can be unsafe (grazing upstream), so the layer says "verify and treat".
 
+**How a spot is found (rule-based, explainable)**
+1. **Hard filters:** local slope over the pitch (about 5 degrees ideal, 8 tolerable) at 2 m; not a hollow or a channel (curvature, flow accumulation) and not in reach of flooding (height above the nearest drainage); canopy height and roughness low enough for a pitch; not on rock, scree or wet ground; not below steep faces (rockfall reach) or in avalanche runout in early summer snow; below the snowline.
+2. **Soft criteria:** distance off a trail (about 30-300 m, not on it), water distance (50-500 m, not on the shore), shelter versus exposure (topographic openness; avoid ridge tops for lightning and wind), aspect and morning sun, and the sunrise and sunset visibility from the spot, which our horizon engine and the sun path (Phase 5b) already compute. A drinking-water source within reach adds to the score.
+3. **Presets** weight the criteria ("sheltered", "sunrise view", "near water", "close to trail").
+4. **Output:** a heatmap layer on the map at about 10 m, ranked spots after non-maximum suppression (about 150 m apart), each with the reasons that drove its score and the flags that apply, and "show the view from here" opening the panorama.
+5. **Refinement:** the 2 m grid finds zones; the 0.5 m grid re-checks the top candidates in a 100 x 100 m window, where the actual pitch can be resolved.
+
+**Technical notes**
+- The Swiss grids are metric (LV95), not Web Mercator tiles. The camping module gets its own grid source (windowed reads, range requests, block cache in IndexedDB) rather than reusing `ElevationSource`; it needs an LV95 <-> WGS84 conversion (swisstopo's approximate formulas, about 1 m, as pure functions with tests) and a small COG reader. Own reader (TIFF header, tile offsets, range fetch, LZW decode, roughly 200 lines, testable with a small committed fixture tile) instead of `geotiff.js`, to keep the bundle small; revisit if other compressions appear.
+- Cost: a 5 x 5 km area at 2 m is 6.25 M cells (25 MB as float32): fine in a worker, but download-heavy (about 30 MB) on mobile data, so use range requests for corridors, show progress and cache aggressively.
+- Side benefit for the panorama: in Switzerland the same 2 m data could sharpen the near field of the view (see Rendering quality).
+
+**Examination (spike)**
+- [ ] S1: COG reader and LV95 conversion, with tests; read the Leuggelenstock/Ijenstock area.
+- [ ] S2: slope, curvature, roughness and canopy rasters at 2 m for a 4 x 4 km area; show them as an overlay on the map picker; check visually against the aerial imagery and the national map.
+- [ ] S3: trails, water and drinking water from OSM, with the trail-distance and water-distance rasters.
+- [ ] S4: protected-area flags from the BAFU layers with season awareness.
+- [ ] S5: scoring, presets, heatmap and ranked spots; inspect the top spots on aerial imagery and against known camping and bivouac places in the area.
+- [ ] S6: a GPX corridor over the same area.
+- [ ] **Deliverable:** a short write-up in `docs/` with the measurements, the chosen approach or a no-go, phases with acceptance criteria, and open legal wording.
