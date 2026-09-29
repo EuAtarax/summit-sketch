@@ -1,6 +1,9 @@
 import { metersPerPixel } from '../geo/tiles';
 import { CancelledComputeError, HorizonEngine, type EngineRun } from '../horizon/engine';
+import { labelCandidatesFor } from '../peaks/labelPipeline';
 import { nearestPeak, type BBox, type Peak } from '../peaks/overpass';
+import { PanoramaPeakLoader } from '../peaks/panoramaPeaks';
+import { createIndexedDbPeakCache } from '../peaks/peakCacheIdb';
 import { PeakStore } from '../peaks/peakStore';
 import { availableStyles, DEFAULT_STYLE_ID } from '../render/styles';
 import { loadChoice, saveChoice } from './stylePicker';
@@ -35,6 +38,7 @@ export function mountApp(root: HTMLElement): void {
 
   const engine = new HorizonEngine();
   const peaks = new PeakStore();
+  const panoramaPeaks = new PanoramaPeakLoader({ backend: createIndexedDbPeakCache() });
   let selected: SheetSummit | null = null;
   let pickSeq = 0;
   let run: EngineRun | null = null;
@@ -80,6 +84,11 @@ export function mountApp(root: HTMLElement): void {
       url.searchParams.set('style', c.styleId);
       history.replaceState(null, '', url);
     },
+    (scene) =>
+      labelCandidatesFor(scene, {
+        loadPeaks: (lat, lon, radiusM) => panoramaPeaks.load(lat, lon, radiusM),
+        elevations: (points) => engine.elevations(points),
+      }),
   );
 
   function updateHint(zoom: number) {

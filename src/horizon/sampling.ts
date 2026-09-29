@@ -15,6 +15,14 @@ export const DEFAULT_ZOOM_BANDS: readonly ZoomBand[] = [
   { maxDistM: Infinity, zoom: 9 },
 ];
 
+/** The zoom the ray cast uses at a distance, so lookups there hit the same cached tiles. */
+export function zoomForDistance(
+  distM: number,
+  bands: readonly ZoomBand[] = DEFAULT_ZOOM_BANDS,
+): number {
+  return (bands.find((b) => distM <= b.maxDistM) ?? bands[bands.length - 1]!).zoom;
+}
+
 /** Distances along a ray, shared by every ray of one panorama. */
 export interface RaySamples {
   count: number;

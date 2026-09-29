@@ -2,6 +2,7 @@ import { rayEnvelope, raysPerVertex } from '../envelope';
 import { makeSlice, crestPath, forEachSea, periodicLattice, periodicNoise } from '../layers';
 import { rand01 } from '../random';
 import { paperGrain } from '../grain';
+import { drawPeakLabels, LABEL_FONT_FAMILY, type LabelStyle } from '../labels';
 import type { PanoramaStyle } from '../style';
 
 const PAPER = '#F2EEE3';
@@ -12,6 +13,17 @@ const WIDTH = [2.2, 1.7, 1.2, 0.9, 0.8];
 const STROKES = [3, 2, 1, 1, 1];
 const WOBBLE_PX = [1.3, 1, 0.7, 0.45, 0.3];
 const HATCH_DENSITY = [0.9, 0.55, 0.25, 0, 0];
+
+const LABEL_STYLE: LabelStyle = {
+  fontFamily: LABEL_FONT_FAMILY,
+  fontWeight: 500,
+  fontPx: 14,
+  color: `rgb(${GRAPHITE})`,
+  halo: PAPER,
+  chip: null,
+  leader: { color: `rgba(${GRAPHITE},0.7)`, width: 0.8, dash: [] },
+  uppercase: false,
+};
 
 /**
  * Pencil sketch: graphite strokes on off-white paper. Near ridges get 2–3 overlapping
@@ -24,6 +36,7 @@ export const pencilStyle: PanoramaStyle = {
   paper: () => PAPER,
   ground: () => PAPER,
   uses: [],
+  labelStyle: LABEL_STYLE,
   render(ctx, scene, v, opts) {
     const s = makeSlice(ctx, scene, v);
     ctx.fillStyle = PAPER;
@@ -120,5 +133,7 @@ export const pencilStyle: PanoramaStyle = {
         ctx.fillRect(0, 0, v.width, v.height);
       }
     }
+
+    drawPeakLabels(ctx, v, opts.labels, LABEL_STYLE);
   },
 };

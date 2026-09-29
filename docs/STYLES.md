@@ -48,4 +48,10 @@ Every 2D style renders the same `PanoramaScene`. Each spec lists the look, the p
 
 ## Labels per style
 
-Each style provides `labelStyle`: font, color, leader-line style, and background (none, a paper chip, or a glow). Labels must stay readable on all backgrounds.
+Each style provides `labelStyle`: font, color, leader-line style, and background (none, a paper chip, or a glow). Labels must stay readable on all backgrounds. All use Barlow Condensed at 14 px; placement (ranked greedy, stacked rows, leader lines) is shared and lives in `render/labelLayout.ts`.
+
+| Style | Look |
+|---|---|
+| Pencil sketch | Graphite text with a paper-colored halo, thin graphite leader |
+| Misty layers | Dark text on a translucent white chip, dark leader with a light halo (works on Dawn, Day and Dusk) |
+| Cartoon | Bold text on a white chip with the dark outline color, 1.5 px leader |

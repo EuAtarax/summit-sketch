@@ -29,8 +29,14 @@ export function levelFor(devicePxPerDeg: number): Level {
   return LEVELS.find((l) => l.ppd >= devicePxPerDeg * 0.97) ?? LEVELS[LEVELS.length - 1]!;
 }
 
-/** Vertical extent worth showing: a little sky above the horizon, down to the lowest feature. */
-export function sceneAngleRange(scene: PanoramaScene): { top: number; bottom: number } {
+/**
+ * Vertical extent worth showing: a little sky above the horizon, down to the lowest feature.
+ * `extraTopDeg` adds room above for the peak-label band.
+ */
+export function sceneAngleRange(
+  scene: PanoramaScene,
+  extraTopDeg = 0,
+): { top: number; bottom: number } {
   let top = -90;
   let bottom = 90;
   for (const a of scene.horizonAngle) {
@@ -42,7 +48,7 @@ export function sceneAngleRange(scene: PanoramaScene): { top: number; bottom: nu
     for (const p of l.points) if (p.angle < bottom) bottom = p.angle;
   for (const lo of scene.sea.lo) if (lo < bottom) bottom = lo;
   if (top < bottom) return { top: 10, bottom: -10 };
-  return { top: Math.min(85, top + 3), bottom: Math.max(-85, bottom - 2) };
+  return { top: Math.min(85, top + 3 + extraTopDeg), bottom: Math.max(-85, bottom - 2) };
 }
 
 export interface TileRef {

@@ -42,7 +42,7 @@ src/
   geo/        tile math, geodesy (destination point, distance), pure functions
   terrain/    ElevationSource interface, TerrariumSource, SyntheticSource (tests), tile cache
   horizon/    worker entry, ray casting, crest extraction, ridge linking → PanoramaScene
-  peaks/      Overpass fetch, peak visibility test
+  peaks/      Overpass fetch (one query per panorama), peak visibility, ranking
   render/     ViewTransform (projection), style registry, styles/*, shared noise/brush utils
   ui/         map picker, summit sheet, panorama viewer, style picker, export
 ```
@@ -76,12 +76,15 @@ interface PanoramaStyle {
   paper(opts): string;         // sky above the rendered content
   ground(opts): string;        // ground below the rendered content
   uses: ('snowline' | 'palette')[]; // options it reacts to (cache keys, thumbnails)
+  labelStyle: LabelStyle;      // font, colors, leader line, chip (see STYLES.md)
   render(ctx: CanvasRenderingContext2D, scene: PanoramaScene, view: ViewTransform,
          opts: { seed: number; snowlineM: number; palette: 'dawn' | 'day' | 'dusk';
-                 labels?: LabeledPeak[] | null /* Phase 3 */ }): void;
+                 labels?: readonly LabeledPeak[] | null }): void;
 }
 // Styles may be asked to draw any slice (the viewer renders tiles): derive all geometry
 // and randomness from absolute azimuth/angle so adjacent tiles and the 0°/360° seam agree.
+// Labels are placed outside the style, once per (style, zoom level, exaggeration), in absolute
+// az/angle space with a box offset in px; the style calls drawPeakLabels(...) last.
 ```
 
 ## Core math (keep in `geo/` and `horizon/`, with unit tests)

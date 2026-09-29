@@ -11,6 +11,7 @@ import {
   makeSlice,
   type Slice,
 } from '../layers';
+import { drawPeakLabels, LABEL_FONT_FAMILY, type LabelStyle } from '../labels';
 import { mulberry32 } from '../random';
 import type { PanoramaStyle } from '../style';
 import { wrap180 } from '../viewTransform';
@@ -81,6 +82,17 @@ function drawClouds(s: Slice, seed: number): void {
   }
 }
 
+const LABEL_STYLE: LabelStyle = {
+  fontFamily: LABEL_FONT_FAMILY,
+  fontWeight: 700,
+  fontPx: 14,
+  color: OUTLINE,
+  halo: null,
+  chip: { fill: '#FFFFFF', stroke: OUTLINE },
+  leader: { color: OUTLINE, width: 1.5, dash: [] },
+  uppercase: false,
+};
+
 /**
  * Cartoon: bold, flat, saturated bands by depth, 3 px outlines on the three nearest
  * bands, white snow caps with a scalloped lower edge, a gradient sky and seeded clouds.
@@ -91,6 +103,7 @@ export const cartoonStyle: PanoramaStyle = {
   paper: () => SKY_TOP,
   ground: () => BANDS[0]!,
   uses: ['snowline'],
+  labelStyle: LABEL_STYLE,
   render(ctx, scene, v, opts) {
     const s = makeSlice(ctx, scene, v);
     fillSky(s, [
@@ -165,5 +178,7 @@ export const cartoonStyle: PanoramaStyle = {
       crestPath(s, run);
       ctx.stroke();
     }
+
+    drawPeakLabels(ctx, v, opts.labels, LABEL_STYLE);
   },
 };

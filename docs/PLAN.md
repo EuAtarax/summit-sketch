@@ -42,11 +42,13 @@ The horizon shape and the direction of major peaks should match.
 **Done when:** switching styles is instant (< 200 ms) with no recompute.
 
 ## Phase 3: Peak labels (toggle)
-- [ ] One Overpass query per panorama (bbox of the radius, named peaks only), cached by rounded observer coordinates
-- [ ] Visibility test: the peak's angle (from its OSM `ele`, falling back to the DEM) must be ≥ the running max angle along its azimuth up to 98% of its distance, minus a 0.05° tolerance
-- [ ] Label placement: rank by elevation and angular prominence, place greedily without overlaps, and draw leader lines to the summit point
-- [ ] Each style defines its own label look
-- [ ] Labels off by default; the toggle is remembered
+- [x] One Overpass query per panorama (bbox of the radius, named peaks only), cached by rounded observer coordinates
+- [x] Visibility test: the peak's angle (from its OSM `ele`, falling back to the DEM) must be ≥ the running max angle along its azimuth up to 98% of its distance, minus a 0.05° tolerance
+- [x] Label placement: rank by elevation and angular prominence, place greedily without overlaps, and draw leader lines to the summit point
+- [x] Each style defines its own label look
+- [x] Labels off by default; the toggle is remembered
+
+**Implementation notes:** the running max at 98% of the peak's distance comes from the scene's visible crests (no re-cast), so a crest dropped by ridge linking cannot hide a peak. Peaks without `ele` get a DEM summit elevation (highest cell within 100 m, at the zoom the ray cast uses at that distance). Angular prominence is the summit angle minus the higher of the two sides' lowest crest at a similar distance within 6 degrees of azimuth. Labels add a sky band above the highest crest while on (about five rows), so toggling re-frames the horizon and rebuilds the tile cache.
 
 ## Phase 4: Viewer + export
 - [x] 360° viewer: drag/swipe with inertia, wrap-around, pinch to zoom, compass strip with N/E/S/W and degree ticks

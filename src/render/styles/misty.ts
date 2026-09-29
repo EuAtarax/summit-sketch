@@ -1,5 +1,6 @@
 import { depthT, mix } from '../depth';
 import { bandPath, fillBackdrop, fillSky, forEachSea, makeSlice } from '../layers';
+import { drawPeakLabels, LABEL_FONT_FAMILY, type LabelStyle } from '../labels';
 import type { PaletteId, PanoramaStyle } from '../style';
 
 interface Palette {
@@ -55,6 +56,18 @@ function layerColor(p: Palette, distM: number, radiusM: number): string {
   return mix(p.near, p.haze, 0.08 + 0.84 * Math.pow(depthT(distM, radiusM), 0.85));
 }
 
+/** A light chip keeps the text readable on all three palettes, dark dusk skies included. */
+const LABEL_STYLE: LabelStyle = {
+  fontFamily: LABEL_FONT_FAMILY,
+  fontWeight: 600,
+  fontPx: 14,
+  color: '#1F2A33',
+  halo: null,
+  chip: { fill: 'rgba(255,255,255,0.82)', stroke: null },
+  leader: { color: 'rgba(31,42,51,0.8)', width: 1, dash: [], halo: 'rgba(255,255,255,0.75)' },
+  uppercase: false,
+};
+
 /**
  * Misty layers: flat silhouettes fading into the sky (atmospheric perspective). Painter's
  * fill far to near, no outlines, three palettes.
@@ -65,6 +78,7 @@ export const mistyStyle: PanoramaStyle = {
   paper: (o) => MISTY_PALETTES[o.palette].skyTop,
   ground: (o) => MISTY_PALETTES[o.palette].haze,
   uses: ['palette'],
+  labelStyle: LABEL_STYLE,
   render(ctx, scene, v, opts) {
     const p = MISTY_PALETTES[opts.palette];
     const s = makeSlice(ctx, scene, v);
@@ -103,5 +117,6 @@ export const mistyStyle: PanoramaStyle = {
       ctx.fillStyle = mix(p.sea, p.haze, t);
       ctx.fillRect(x, yTop, w, yBottom - yTop);
     });
+    drawPeakLabels(ctx, v, opts.labels, LABEL_STYLE);
   },
 };

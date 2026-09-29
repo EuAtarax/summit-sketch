@@ -10,12 +10,15 @@ export interface StyleChoice {
   /** null = automatic from latitude. */
   snowlineM: number | null;
   exaggeration: number | 'auto';
+  /** Peak labels on the panorama; off by default and remembered. */
+  labels: boolean;
 }
 
 export const DEFAULT_CHOICE: Omit<StyleChoice, 'styleId'> = {
   palette: 'day',
   snowlineM: null,
   exaggeration: 'auto',
+  labels: false,
 };
 
 const STORAGE_KEY = 'summit-sketch:style';
@@ -84,8 +87,14 @@ function renderThumb(
   style.render(ctx, scene, view, opts);
 }
 
+/** What the labels toggle shows: loading peak names, done, or a failure with a retry. */
+export type LabelState =
+  { kind: 'idle' } | { kind: 'loading' } | { kind: 'message'; text: string; retry?: () => void };
+
 export interface StyleBar {
   setScene(scene: PanoramaScene, headingAz: number): void;
+  /** Shows progress, an empty result or an error next to the labels toggle. */
+  setLabelState(state: LabelState): void;
   /** Re-renders the thumbnails around a new heading (e.g. after panning). */
   refresh(headingAz: number): void;
   readonly choice: StyleChoice;
@@ -148,8 +157,19 @@ export function createStyleBar(
     renderPanel();
   };
 
-  bar.append(list, adjust);
-  parent.append(panel, bar);
+  const labelsButton = document.createElement('button');
+  labelsButton.type = 'button';
+  labelsButton.className = 'adjust-button';
+  labelsButton.textContent = 'Labels';
+  labelsButton.onclick = () => update({ labels: !choice.labels });
+
+  const labelStatus = document.createElement('p');
+  labelStatus.className = 'label-status';
+  labelStatus.setAttribute('role', 'status');
+  labelStatus.hidden = true;
+
+  bar.append(list, labelsButton, adjust);
+  parent.append(labelStatus, panel, bar);
 
   function styleOf(id: string) {
     return styles.find((s) => s.id === id) ?? styles[0]!;
@@ -167,6 +187,7 @@ export function createStyleBar(
     for (const [id, b] of buttons) {
       b.setAttribute('aria-checked', String(id === choice.styleId));
     }
+    labelsButton.setAttribute('aria-pressed', String(choice.labels));
   }
 
   function update(patch: Partial<StyleChoice>) {
@@ -280,6 +301,22 @@ export function createStyleBar(
   return {
     get choice() {
       return choice;
+    },
+    setLabelState(state) {
+      labelStatus.replaceChildren();
+      labelStatus.hidden = state.kind === 'idle';
+      if (state.kind === 'loading') labelStatus.textContent = 'Loading peak names…';
+      if (state.kind === 'message') {
+        labelStatus.textContent = state.text;
+        if (state.retry) {
+          const retry = document.createElement('button');
+          retry.type = 'button';
+          retry.className = 'text-button';
+          retry.textContent = 'Try again';
+          retry.onclick = state.retry;
+          labelStatus.append(' ', retry);
+        }
+      }
     },
     setScene(s, az) {
       scene = s;

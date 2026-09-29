@@ -1,4 +1,5 @@
 import type { PanoramaScene } from '../horizon/scene';
+import type { LabelStyle, LabeledPeak } from './labels';
 import type { ViewTransform } from './viewTransform';
 
 export type PaletteId = 'dawn' | 'day' | 'dusk';
@@ -10,6 +11,8 @@ export interface RenderOptions {
   snowlineM: number;
   /** Palette for styles that offer several (Misty layers). */
   palette: PaletteId;
+  /** Placed peak labels for the slice being drawn (Phase 3); null or absent draws none. */
+  labels?: readonly LabeledPeak[] | null;
 }
 
 /**
@@ -26,6 +29,8 @@ export interface PanoramaStyle {
   ground: (opts: RenderOptions) => string;
   /** Options this style reacts to, so caches and thumbnails can ignore the others. */
   uses: readonly ('snowline' | 'palette')[];
+  /** How this style draws peak labels (font, colors, leader line, chip). */
+  labelStyle: LabelStyle;
   render(
     ctx: CanvasRenderingContext2D,
     scene: PanoramaScene,
