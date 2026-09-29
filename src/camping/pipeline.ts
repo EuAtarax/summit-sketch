@@ -1,6 +1,12 @@
+import { createIdbCache, type Cache } from '../cache/idbCache';
+import type { BBox } from '../peaks/overpass';
 import { downsampleMean, flatSurfaceMask, objectHeight, roughness, slopeDegrees } from './analysis';
 import type { FetchFn } from './cog';
-import { DSM_05M, DTM_2M, loadWindow, type GridGeometry } from './terrain';
+import { lv95ToWgs84, wgs84ToLv95 } from './lv95';
+import { fetchFeatures, type DrinkingSource, type LatLon, type OsmFeatures } from './osm';
+import { fetchProtectedAreas, protectionIndex, type ProtectedArea } from './protection';
+import { distanceTransform, rasterizeLines, rasterizePoints, type Point } from './raster';
+import { DSM_05M, DTM_2M, loadWindow, windowBounds, type GridGeometry } from './terrain';
 
 export interface AnalysisParams {
   /** Center of the area in LV95, meters. */
@@ -10,15 +16,19 @@ export interface AnalysisParams {
   halfSizeM: number;
   /** Also load the 0.5 m surface model to get vegetation height (large download). */
   canopy: boolean;
+  /** The day the protection periods are checked against, in ms since the epoch. */
+  date: number;
 }
 
+/** A protected area without its outline: all the panel needs to list it. */
+export type AreaInfo = Omit<ProtectedArea, 'polygons'>;
+
 /**
- * Everything that does not depend on the user's thresholds. Suitability is derived from
- * these on demand, so moving a slider never needs another download.
+ * Everything that does not depend on the user's thresholds. Suitability and the camp score are
+ * derived from these on demand, so moving a slider never needs another download.
  */
 export interface AnalysisResult {
   geometry: GridGeometry;
-  elevation: Float32Array;
   /** Degrees. */
   slope: Float32Array;
   /** Meters, RMS distance from the local plane over a 6 m window. */
@@ -27,22 +37,123 @@ export interface AnalysisResult {
   water: Float32Array;
   /** Vegetation and object height in meters, when it was requested. */
   canopy?: Float32Array;
+  /** Meters to the nearest trail, stream or lake shore, and drinking-water source. Infinity when
+   * the area has none; absent when OpenStreetMap could not be reached. */
+  trailDistance?: Float32Array;
+  waterDistance?: Float32Array;
+  drinkingDistance?: Float32Array;
+  drinking: DrinkingSource[];
+  /** 1-based index into `areas` for each cell (0 = not protected); absent when unavailable. */
+  protectionIndex?: Uint8Array;
+  areas: AreaInfo[];
+  /** Plain-language notes about data that could not be loaded. */
+  warnings: string[];
   millis: number;
 }
 
 export interface Progress {
-  stage: 'terrain' | 'surface' | 'analysis';
+  stage: 'terrain' | 'surface' | 'features' | 'analysis';
   done: number;
   total: number;
 }
 
-/** Loads the terrain around a point and derives slope, roughness, water and vegetation. */
+export interface AnalysisDeps {
+  /** One fetch for every service (tests route by URL). */
+  fetchFn?: FetchFn;
+  /** Persistent cache for OpenStreetMap answers. */
+  osmCache?: Cache<OsmFeatures>;
+  /** Retry delays for a busy Overpass server (tests use none). */
+  osmBackoffMs?: readonly number[];
+}
+
+const OSM_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+const BOX_MARGIN_M = 100;
+
+export const OSM_UNAVAILABLE =
+  'Trails, water and drinking water could not be loaded (the OpenStreetMap server is busy). The result ignores them.';
+export const PROTECTION_UNAVAILABLE =
+  'Protected areas could not be loaded. Check the rules that apply before camping.';
+
+/** The default cache lives in IndexedDB, which not every environment (tests) has. */
+function defaultOsmCache(): Cache<OsmFeatures> | undefined {
+  return typeof indexedDB === 'undefined'
+    ? undefined
+    : createIdbCache<OsmFeatures>({
+        dbName: 'summit-sketch-osm',
+        store: 'features',
+        maxAgeMs: OSM_MAX_AGE_MS,
+      });
+}
+
+/** WGS84 box around a window, with a margin so features just outside still count. */
+function wgs84Box(g: GridGeometry): BBox {
+  const size = g.width * g.cell;
+  const sw = lv95ToWgs84(g.e0 - BOX_MARGIN_M, g.n0 - size - BOX_MARGIN_M);
+  const ne = lv95ToWgs84(g.e0 + size + BOX_MARGIN_M, g.n0 + BOX_MARGIN_M);
+  return { south: sw.lat, west: sw.lon, north: ne.lat, east: ne.lon };
+}
+
+const toLv95 = (p: LatLon): Point => {
+  const q = wgs84ToLv95(p.lat, p.lon);
+  return [q.e, q.n];
+};
+
+/** Distance rasters (meters) to trails, water and drinking water from OSM features. */
+function featureDistances(f: OsmFeatures, g: GridGeometry) {
+  const distance = (mask: Uint8Array) => distanceTransform(mask, g.width, g.height, g.cell);
+  return {
+    trailDistance: distance(
+      rasterizeLines(
+        f.trails.map((l) => l.map(toLv95)),
+        g,
+      ),
+    ),
+    waterDistance: distance(
+      rasterizeLines(
+        f.water.map((l) => l.map(toLv95)),
+        g,
+      ),
+    ),
+    drinkingDistance: distance(rasterizePoints(f.drinking.map(toLv95), g)),
+  };
+}
+
+const areaInfo = (a: ProtectedArea): AreaInfo => ({
+  layer: a.layer,
+  kind: a.kind,
+  name: a.name,
+  rule: a.rule,
+  period: a.period,
+  inForce: a.inForce,
+});
+
+/**
+ * Loads the terrain around a point and derives slope, roughness, water and vegetation; also
+ * fetches trails, water, drinking water (OpenStreetMap) and protected areas (swisstopo/BAFU) in
+ * parallel. Failures of those two are reported as warnings, never as a failed analysis.
+ */
 export async function runAnalysis(
   params: AnalysisParams,
   onProgress: (p: Progress) => void,
-  fetchFn?: FetchFn,
+  deps: AnalysisDeps = {},
 ): Promise<AnalysisResult> {
   const started = performance.now();
+  const { fetchFn } = deps;
+  const bounds = windowBounds(params.e, params.n, params.halfSizeM, DTM_2M.gsd);
+  const box = wgs84Box({ ...bounds, cell: DTM_2M.gsd });
+
+  // Start the slow network calls first; the terrain is read while they are in flight.
+  const osmCache = deps.osmCache ?? defaultOsmCache();
+  const osm = fetchFeatures(box, {
+    ...(fetchFn ? { fetchFn } : {}),
+    ...(osmCache ? { cache: osmCache } : {}),
+    ...(deps.osmBackoffMs ? { backoffMs: deps.osmBackoffMs } : {}),
+  });
+  const protection = fetchProtectedAreas(box, new Date(params.date), fetchFn);
+  // A failure is handled below; this only keeps an early rejection from being reported as unhandled.
+  osm.catch(() => undefined);
+  protection.catch(() => undefined);
+
   const dtm = await loadWindow(
     DTM_2M,
     params.e,
@@ -74,14 +185,36 @@ export async function runAnalysis(
     canopy = objectHeight(coarse.data, dtm.data);
   }
 
-  const { data: elevation, ...geometry } = dtm;
-  return {
+  onProgress({ stage: 'features', done: 0, total: 1 });
+  const [osmResult, protectionResult] = await Promise.allSettled([osm, protection]);
+  const warnings: string[] = [];
+  const geometry: GridGeometry = { e0: dtm.e0, n0: dtm.n0, cell, width, height };
+
+  const result: AnalysisResult = {
     geometry,
-    elevation,
     slope,
     roughness: rough,
     water,
-    ...(canopy ? { canopy } : {}),
-    millis: performance.now() - started,
+    drinking: [],
+    areas: [],
+    warnings,
+    millis: 0,
   };
+  if (canopy) result.canopy = canopy;
+  if (osmResult.status === 'fulfilled') {
+    Object.assign(result, featureDistances(osmResult.value, geometry));
+    result.drinking = osmResult.value.drinking;
+  } else {
+    console.warn('OpenStreetMap features unavailable', osmResult.reason);
+    warnings.push(OSM_UNAVAILABLE);
+  }
+  if (protectionResult.status === 'fulfilled') {
+    result.protectionIndex = protectionIndex(protectionResult.value, geometry);
+    result.areas = protectionResult.value.map(areaInfo);
+  } else {
+    console.warn('Protected areas unavailable', protectionResult.reason);
+    warnings.push(PROTECTION_UNAVAILABLE);
+  }
+  result.millis = performance.now() - started;
+  return result;
 }

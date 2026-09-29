@@ -37,6 +37,30 @@ describe('makeColorizer', () => {
   });
 });
 
+describe('special layers', () => {
+  it('colors lakes blue whatever the palette', () => {
+    const a = makeColorizer('water', 'green')(1);
+    const b = makeColorizer('water', 'magma')(1);
+    expect(a).toEqual(b);
+    expect(a[3]).toBeGreaterThan(100);
+    expect(makeColorizer('water', 'green')(0)[3]).toBe(0);
+  });
+
+  it('shows protection in force stronger than protection out of season, and nothing elsewhere', () => {
+    const c = makeColorizer('protected', 'green');
+    expect(c(0)[3]).toBe(0);
+    expect(c(1)[3]).toBeGreaterThan(0);
+    expect(c(2)[3]).toBeGreaterThan(c(1)[3]);
+    expect(c(2)[0]).toBeGreaterThan(c(1)[0] - 100);
+  });
+
+  it('draws the camp score like the terrain-only suitability', () => {
+    const score = makeColorizer('score', 'viridis');
+    const terrain = makeColorizer('suitability', 'viridis');
+    expect(score(0.8)).toEqual(terrain(0.8));
+  });
+});
+
 describe('windowCorners', () => {
   it('returns the corners of the window around the right place, about its size apart', () => {
     // 1 km window at the Glarus Sud test tile.

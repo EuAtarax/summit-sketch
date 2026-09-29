@@ -1,6 +1,7 @@
 import { DEFAULT_SUITABILITY, type SuitabilityParams } from './analysis';
 import type { LayerId } from './heatmap';
 import { DEFAULT_PALETTE, isPaletteId, type PaletteId } from './palettes';
+import { DEFAULT_NEARBY, type NearbyParams, type NearbyPreference } from './scoring';
 
 /** Side length of the analysed square, km. */
 export const AREA_SIZES_KM = [0.5, 1, 2, 4] as const;
@@ -9,7 +10,15 @@ export type AreaKm = (typeof AREA_SIZES_KM)[number];
 export const MAX_CANOPY_AREA_KM: AreaKm = 1;
 
 export type BaseMapId = 'map' | 'aerial';
-const LAYER_IDS: readonly LayerId[] = ['suitability', 'slope', 'roughness', 'canopy', 'water'];
+const LAYER_IDS: readonly LayerId[] = [
+  'score',
+  'suitability',
+  'slope',
+  'roughness',
+  'canopy',
+  'water',
+  'protected',
+];
 
 export interface CampingSettings {
   areaKm: AreaKm;
@@ -23,20 +32,29 @@ export interface CampingSettings {
   /** Ids of the enabled map overlays (see overlays.ts). */
   overlays: string[];
   suitability: SuitabilityParams;
+  /** Preferences for being near trails, water and drinking water. */
+  nearby: NearbyParams;
+  /** Cut ground where a protection is in force out of the camp score. */
+  hideProtected: boolean;
+  /** Show drinking-water sources as markers on the map. */
+  showDrinking: boolean;
 }
 
 export const DEFAULT_SETTINGS: CampingSettings = {
   areaKm: 2,
-  layer: 'suitability',
+  layer: 'score',
   palette: DEFAULT_PALETTE,
   base: 'map',
   opacity: 0.85,
   canopy: false,
   overlays: [],
   suitability: DEFAULT_SUITABILITY,
+  nearby: DEFAULT_NEARBY,
+  hideProtected: true,
+  showDrinking: true,
 };
 
-/** What each tunable is, its recommended value and a short explanation (shown in the panel). */
+/** What each pitch tunable is, its range and a short explanation (shown in the panel). */
 export const SUITABILITY_CONTROLS: readonly {
   key: keyof Omit<SuitabilityParams, 'excludeWater'>;
   label: string;
@@ -93,6 +111,41 @@ export const SUITABILITY_CONTROLS: readonly {
   },
 ];
 
+/** The "near" preferences: each can be switched off and has a distance. */
+export const NEARBY_CONTROLS: readonly {
+  key: keyof NearbyParams;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  help: string;
+}[] = [
+  {
+    key: 'trail',
+    label: 'Near a trail',
+    min: 50,
+    max: 1000,
+    step: 25,
+    help: 'Prefers spots within this distance of a path, so you can reach them. Ground on the path itself is never suggested. Far from any trail the score is cut to about a sixth.',
+  },
+  {
+    key: 'water',
+    label: 'Near water',
+    min: 100,
+    max: 1500,
+    step: 50,
+    help: 'Prefers spots within this distance of a stream or lake shore (halves the score when far away). It only counts if the water is mapped in OpenStreetMap.',
+  },
+  {
+    key: 'drinking',
+    label: 'Near drinking water',
+    min: 100,
+    max: 3000,
+    step: 100,
+    help: 'Prefers spots within this distance of a fountain, tap or spring (about 40 % less when far away). Springs need treating; check the markers.',
+  },
+];
+
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** Coerces stored or edited suitability values into a consistent, in-range set. */
@@ -122,6 +175,23 @@ export function sanitizeSuitability(raw: unknown): SuitabilityParams {
   };
 }
 
+/** Coerces stored "near" preferences into in-range values. */
+export function sanitizeNearby(raw: unknown): NearbyParams {
+  const r = (raw ?? {}) as Partial<Record<keyof NearbyParams, Partial<NearbyPreference>>>;
+  const one = (key: keyof NearbyParams): NearbyPreference => {
+    const c = NEARBY_CONTROLS.find((x) => x.key === key)!;
+    const stored = r[key];
+    return {
+      enabled: typeof stored?.enabled === 'boolean' ? stored.enabled : DEFAULT_NEARBY[key].enabled,
+      maxM:
+        typeof stored?.maxM === 'number' && Number.isFinite(stored.maxM)
+          ? clamp(stored.maxM, c.min, c.max)
+          : DEFAULT_NEARBY[key].maxM,
+    };
+  };
+  return { trail: one('trail'), water: one('water'), drinking: one('drinking') };
+}
+
 /** Coerces stored settings (which may be old, partial or hand-edited) into valid ones. */
 export function sanitizeSettings(raw: unknown): CampingSettings {
   const r = (raw ?? {}) as Partial<Record<keyof CampingSettings, unknown>>;
@@ -141,6 +211,11 @@ export function sanitizeSettings(raw: unknown): CampingSettings {
     canopy: r.canopy === true && areaKm <= MAX_CANOPY_AREA_KM,
     overlays: Array.isArray(r.overlays) ? r.overlays.filter((o) => typeof o === 'string') : [],
     suitability: sanitizeSuitability(r.suitability),
+    nearby: sanitizeNearby(r.nearby),
+    hideProtected:
+      typeof r.hideProtected === 'boolean' ? r.hideProtected : DEFAULT_SETTINGS.hideProtected,
+    showDrinking:
+      typeof r.showDrinking === 'boolean' ? r.showDrinking : DEFAULT_SETTINGS.showDrinking,
   };
 }
 

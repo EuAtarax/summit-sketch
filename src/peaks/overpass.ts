@@ -1,6 +1,12 @@
 import { distanceM } from '../geo/geodesy';
 
-export const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+/**
+ * The public Overpass server. `VITE_OVERPASS_URL` swaps it at build time (a mirror, or a local
+ * fake server for browser tests).
+ */
+export const OVERPASS_URL =
+  (import.meta.env.VITE_OVERPASS_URL as string | undefined) ??
+  'https://overpass-api.de/api/interpreter';
 
 export interface Peak {
   id: number;
