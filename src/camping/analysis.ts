@@ -111,11 +111,6 @@ export function objectHeight(surface: Float32Array, terrain: Float32Array): Floa
   return out;
 }
 
-const smoothstep = (edge0: number, edge1: number, v: number): number => {
-  const t = Math.min(1, Math.max(0, (v - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-};
-
 /**
  * Thresholds of the suitability model. Each criterion is fully fine up to its "ok" value,
  * ruled out from its "max" value, and fades smoothly in between.
@@ -207,6 +202,7 @@ export function dilateMask(
 /**
  * Pitch suitability 0..1 per cell: gentle slope, smooth ground and (when known) no tall
  * vegetation, multiplied so that any one failing criterion rules the cell out.
+ * (Runs on every slider move over millions of cells, so the fades are inlined.)
  */
 export function pitchSuitability(
   slope: Float32Array,
@@ -216,20 +212,28 @@ export function pitchSuitability(
   water?: Float32Array,
 ): Float32Array {
   const out = new Float32Array(slope.length);
+  const slopeSpan = 1 / (s.slopeMaxDeg - s.slopeOkDeg);
+  const roughSpan = 1 / (s.roughMaxM - s.roughOkM);
+  const canopySpan = 1 / (s.canopyMaxM - s.canopyOkM);
+  /** 1 - smoothstep: 1 up to the ok value, 0 from the max value on. */
+  const fade = (v: number, ok: number, span: number): number => {
+    const t = (v - ok) * span;
+    return t <= 0 ? 1 : t >= 1 ? 0 : 1 - t * t * (3 - 2 * t);
+  };
   for (let i = 0; i < out.length; i++) {
-    if (Number.isNaN(slope[i]!) || Number.isNaN(rough[i]!)) {
+    const sl = slope[i]!;
+    const r = rough[i]!;
+    if (sl !== sl || r !== r) {
       out[i] = Number.NaN;
       continue;
     }
-    if (water && water[i] === 1) {
-      out[i] = 0;
-      continue;
+    if (water && water[i] === 1) continue; // 0
+    let v = fade(sl, s.slopeOkDeg, slopeSpan);
+    if (v > 0) v *= fade(r, s.roughOkM, roughSpan);
+    if (v > 0 && canopy) {
+      const c = canopy[i]!;
+      if (c === c) v *= fade(c, s.canopyOkM, canopySpan);
     }
-    let v =
-      (1 - smoothstep(s.slopeOkDeg, s.slopeMaxDeg, slope[i]!)) *
-      (1 - smoothstep(s.roughOkM, s.roughMaxM, rough[i]!));
-    if (canopy && !Number.isNaN(canopy[i]!))
-      v *= 1 - smoothstep(s.canopyOkM, s.canopyMaxM, canopy[i]!);
     out[i] = v;
   }
   return out;
@@ -237,7 +241,8 @@ export function pitchSuitability(
 
 /**
  * Keeps a cell only if every cell within `radius` cells is at least as suitable: a pitch
- * needs a whole patch of good ground, not a single lucky cell. NaN counts as unsuitable.
+ * needs a whole patch of good ground, not a single lucky cell. NaN and cells beyond the
+ * border count as unsuitable. (A separable minimum: one pass along rows, one along columns.)
  */
 export function patchMinimum(
   data: Float32Array,
@@ -247,23 +252,23 @@ export function patchMinimum(
 ): Float32Array {
   const rows = new Float32Array(data.length);
   for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
+    const base = y * width;
+    for (let x = radius; x < width - radius; x++) {
       let m = Infinity;
-      for (let dx = -radius; dx <= radius; dx++) {
-        const xx = x + dx;
-        const v = xx < 0 || xx >= width ? 0 : data[y * width + xx]!;
-        m = Math.min(m, Number.isNaN(v) ? 0 : v);
+      for (let k = base + x - radius, end = base + x + radius; k <= end; k++) {
+        const v = data[k]!;
+        if (!(v >= m)) m = v === v ? v : 0; // a NaN counts as 0
       }
-      rows[y * width + x] = m;
+      rows[base + x] = m;
     }
   }
   const out = new Float32Array(data.length);
-  for (let y = 0; y < height; y++) {
+  for (let y = radius; y < height - radius; y++) {
     for (let x = 0; x < width; x++) {
       let m = Infinity;
-      for (let dy = -radius; dy <= radius; dy++) {
-        const yy = y + dy;
-        m = Math.min(m, yy < 0 || yy >= height ? 0 : rows[yy * width + x]!);
+      for (let k = (y - radius) * width + x, end = (y + radius) * width + x; k <= end; k += width) {
+        const v = rows[k]!;
+        if (v < m) m = v;
       }
       out[y * width + x] = m;
     }
