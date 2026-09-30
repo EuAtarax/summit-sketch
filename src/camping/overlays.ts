@@ -1,20 +1,34 @@
-/** Map overlays from swisstopo's geo.admin.ch (all free, CORS-open WMTS tiles). */
+/**
+ * Map overlays: hiking routes everywhere (Waymarked Trails, from OpenStreetMap) and, in
+ * Switzerland, the official trails and protected areas from geo.admin.ch (free WMTS tiles).
+ */
 export interface OverlayDef {
   id: string;
   label: string;
-  /** geo.admin.ch layer id. */
+  /** geo.admin.ch layer id (Swiss overlays). */
   layer: string;
+  /** Tile URL template, for overlays not from geo.admin.ch. */
+  url?: string;
   group: 'paths' | 'protected';
   /** One line for the panel: what it is and why it matters for camping. */
   note: string;
   /** Data owner shown in the map credit. */
-  credit: 'swisstopo' | 'BAFU';
+  credit: 'swisstopo' | 'BAFU' | 'waymarked';
 }
 
 export const OVERLAYS: readonly OverlayDef[] = [
   {
+    id: 'hiking-routes',
+    label: 'Hiking routes (all countries)',
+    layer: '',
+    url: 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
+    group: 'paths',
+    note: 'Signposted hiking routes from OpenStreetMap, shown by Waymarked Trails.',
+    credit: 'waymarked',
+  },
+  {
     id: 'trails',
-    label: 'Hiking trails',
+    label: 'Hiking trails (Switzerland)',
     layer: 'ch.swisstopo.swisstlm3d-wanderwege',
     group: 'paths',
     note: 'Marked hiking paths of Switzerland.',
@@ -100,4 +114,6 @@ export const overlayTileUrl = (layer: string): string =>
 export const CREDITS: Record<OverlayDef['credit'], string> = {
   swisstopo: '© swisstopo',
   BAFU: 'Source: FOEN (BAFU)',
+  waymarked:
+    'Routes: <a href="https://hiking.waymarkedtrails.org" target="_blank" rel="noopener">Waymarked Trails</a> (CC BY-SA), © OpenStreetMap contributors',
 };
