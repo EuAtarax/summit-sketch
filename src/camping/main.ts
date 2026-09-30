@@ -5,6 +5,7 @@ import '@fontsource/atkinson-hyperlegible/700.css';
 import '../ui/search.css';
 import './camping.css';
 import { NominatimClient } from '../search/nominatim';
+import { SwisstopoSuggester } from '../search/swisstopo';
 import { createSearchBar } from '../ui/searchBar';
 import { reloadWhenUpdated } from '../ui/updates';
 import { patchMinimum, pitchSuitability } from './analysis';
@@ -86,10 +87,12 @@ showOverlays(settings.overlays);
 panel.setLegend(settings.layer, settings.palette);
 
 const nominatim = new NominatimClient(undefined, undefined, undefined, 'ch');
+const suggester = new SwisstopoSuggester();
 createSearchBar(
   topBar,
   (query) => nominatim.search(query),
   (place) => map.setView([place.lat, place.lon], Math.max(place.zoom, 12)),
+  (query, signal) => suggester.suggest(query, signal),
 );
 
 // --- choosing a spot and analysing -------------------------------------------------------
