@@ -24,6 +24,7 @@ import type { Progress } from './pipeline';
 import { createProgressBar, progressFraction, shortStage } from './progress';
 import { createSpotProgress } from './spotProgress';
 import { loadSettings, saveSettings, withPatch, type CampingSettings } from './settings';
+import { lookupSwissPlace, rulesFor } from './rules';
 import { NO_GOOD_SPOTS, restrictionNotice } from './summary';
 import { DTM_2M, windowBounds, windowCorners } from './terrain';
 import { createToast } from './toast';
@@ -138,7 +139,26 @@ function selectSpot(lat: number, lon: number): void {
     exact: '1',
   }).toString();
   panel.setPanoramaLink(href.toString());
+  showRules(lat, lon);
   startAnalysis();
+}
+
+let rulesSeq = 0;
+/** Looks up canton and commune at the spot and shows the camping rules recorded for them. */
+function showRules(lat: number, lon: number): void {
+  const mine = ++rulesSeq;
+  panel.setRules({ state: 'loading' });
+  lookupSwissPlace(lat, lon)
+    .then((place) => {
+      if (mine !== rulesSeq) return;
+      const placeName = place ? [place.commune, place.regionName].filter(Boolean).join(', ') : null;
+      panel.setRules({ state: 'ready', placeName, entries: place ? rulesFor(place) : [] });
+    })
+    .catch((err: unknown) => {
+      if (mine !== rulesSeq) return;
+      console.warn('Place lookup failed', err);
+      panel.setRules({ state: 'failed' });
+    });
 }
 
 function analysisWindow(): { e: number; n: number; half: number } {

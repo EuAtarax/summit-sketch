@@ -640,3 +640,62 @@ body,
   font-weight: 700;
   box-shadow: 0 1px 4px rgb(31 42 51 / 0.5);
 }
+
+/* Camping rules at the chosen spot (rulesView.ts). */
+.rules {
+  display: grid;
+  gap: 8px;
+}
+
+.rule-place {
+  margin: 0;
+  font-weight: 700;
+}
+
+.rule-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rule {
+  display: grid;
+  gap: 4px;
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.rule + .rule {
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.rule p,
+.rule ul {
+  margin: 0;
+}
+
+.rule ul {
+  padding-left: 18px;
+}
+
+.rule-stance {
+  justify-self: start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #e3e7ea;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.rule-ban {
+  background: #f6d9dd;
+  color: #7d0a1d;
+}
+
+.rule-sources {
+  color: #56606a;
+  font-size: 0.78rem;
+}

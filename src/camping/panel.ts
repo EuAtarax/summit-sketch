@@ -4,6 +4,7 @@ import { LAYERS, type LayerId } from './heatmap';
 import { OVERLAYS } from './overlays';
 import { PALETTES, paletteGradientCss, type PaletteId } from './palettes';
 import type { AreaInfo } from './pipeline';
+import { rulesNodes, type RulesState } from './rulesView';
 import type { NearbyParams } from './scoring';
 import { formatSignedMeters, type SpotItem } from './summary';
 import {
@@ -46,6 +47,8 @@ export interface Panel {
   /** The list of best spots; `emptyText` says why there are none. */
   setSpots(items: readonly SpotItem[], emptyText?: string): void;
   setAreas(areas: readonly AreaInfo[]): void;
+  /** The camping rules that apply at the chosen spot (canton, Bundesland, commune). */
+  setRules(state: RulesState): void;
   setOpen(open: boolean): void;
   /** Keeps the vegetation checkbox in step with the chosen area. */
   syncFrom(settings: CampingSettings): void;
@@ -217,6 +220,8 @@ export function createPanel(
     'Protections that apply only in other seasons (like winter refuges in summer) are shown but do not hide anything, and neither do nature parks and moorland landscapes, which are large and listed for information. Always check the rules of the area yourself.',
   );
   const areas = section('Protected areas in this box', false, hide.node, areaList);
+  const rulesBody = el('div', { className: 'rules' }, ...rulesNodes({ state: 'none' }));
+  const rules = section('Camping rules here', true, rulesBody);
 
   // Area and heatmap.
   const canopy = checkRow(
@@ -258,7 +263,7 @@ export function createPanel(
     tabs([
       {
         label: 'Spots',
-        content: el('div', { className: 'tab-body' }, spots, areas, panorama, locate),
+        content: el('div', { className: 'tab-body' }, spots, rules, areas, panorama, locate),
       },
       {
         label: 'Tune',
@@ -382,6 +387,9 @@ export function createPanel(
               ),
             )),
       );
+    },
+    setRules(state) {
+      rulesBody.replaceChildren(...rulesNodes(state));
     },
     setOpen,
     syncFrom(next) {

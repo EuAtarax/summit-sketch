@@ -198,6 +198,8 @@ Find suitable places to camp in the wild: flat enough for a small 2-person tent,
 
 - [x] S3: trails, water and drinking water from OSM, with the trail-distance and water-distance rasters.
 - [x] S4: protected-area flags from the BAFU layers with season awareness.
+**Camping rules database (started 2026-09-30):** `src/camping/rules/` holds one entry per country, per canton (all 26) and per Bundesland (all 9), plus the communes known to have their own rules (Lauterbrunnen, Grindelwald, Kandersteg, Silvaplana, Zermatt, Bad Ragaz). The panel shows the entries for the chosen spot, most specific first, with sources and the date checked. Most entries come from summaries that name the law (Hikebeast's canton survey, the Austrian Alpine Club, VIENNA.AT); Ticino and Tirol were checked in the law text or on an official page. Next: read the remaining laws, survey more communes, and add countries as their terrain arrives.
+
 - [ ] S5: scoring, presets, heatmap and ranked spots; inspect the top spots on aerial imagery and against known camping and bivouac places in the area.
 - [ ] S6: a GPX corridor over the same area.
 - [ ] **Deliverable:** a short write-up in `docs/` with the measurements, the chosen approach or a no-go, phases with acceptance criteria, and open legal wording.
