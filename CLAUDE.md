@@ -46,7 +46,8 @@ Attribution line (app footer and exports): "Elevation: Terrain Tiles (Mapzen/AWS
 
 ```
 src/
-  geo/        tile math, geodesy (destination point, distance), pure functions
+  geo/        tile math, geodesy (destination point, distance), BBox, pure functions
+  net/        shared network types (FetchFn, so tests can route requests to fakes)
   terrain/    ElevationSource interface, TerrariumSource, SyntheticSource (tests), tile cache
   horizon/    worker entry, ray casting, crest extraction, ridge linking → PanoramaScene
   peaks/      Overpass fetch (one query per panorama), peak visibility, ranking

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { FetchFn } from './cog';
+import type { FetchFn } from '../net/fetch';
 import { buildTestTiff } from './testTiff';
 import {
   loadWindow,

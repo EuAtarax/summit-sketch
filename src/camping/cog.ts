@@ -1,6 +1,6 @@
 import { decodeLzw } from './lzw';
 
-export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
+import type { FetchFn } from '../net/fetch';
 
 const TAG = {
   imageWidth: 256,

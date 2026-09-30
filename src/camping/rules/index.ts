@@ -1,4 +1,4 @@
-import type { FetchFn } from '../cog';
+import type { FetchFn } from '../../net/fetch';
 import { AT_RULES } from './at';
 import { CH_RULES } from './ch';
 import type { RuleEntry, Stance } from './types';

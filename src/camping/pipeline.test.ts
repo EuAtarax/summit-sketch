@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_SUITABILITY, patchMinimum, pitchSuitability } from './analysis';
-import type { FetchFn } from './cog';
+import type { FetchFn } from '../net/fetch';
 import { lv95ToWgs84 } from './lv95';
 import { runAnalysis, type AnalysisParams, type AnalysisResult, type Progress } from './pipeline';
 import { buildTestTiff } from './testTiff';

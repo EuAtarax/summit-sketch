@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Cache } from '../cache/idbCache';
-import type { FetchFn } from '../peaks/overpassFetch';
+import type { FetchFn } from '../net/fetch';
 import {
   DRINKING_LABELS,
   featuresQuery,

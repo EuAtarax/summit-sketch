@@ -1,6 +1,7 @@
 import type { Cache } from '../cache/idbCache';
-import type { BBox } from '../peaks/overpass';
-import { postOverpass, type FetchFn } from '../peaks/overpassFetch';
+import type { BBox } from '../geo/bbox';
+import type { FetchFn } from '../net/fetch';
+import { postOverpass } from '../peaks/overpassFetch';
 
 export interface LatLon {
   lat: number;

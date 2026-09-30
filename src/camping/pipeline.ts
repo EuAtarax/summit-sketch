@@ -1,5 +1,5 @@
 import { createIdbCache, type Cache } from '../cache/idbCache';
-import type { BBox } from '../peaks/overpass';
+import type { BBox } from '../geo/bbox';
 import {
   dilateMask,
   downsampleMean,
@@ -8,7 +8,7 @@ import {
   roughness,
   slopeDegrees,
 } from './analysis';
-import type { FetchFn } from './cog';
+import type { FetchFn } from '../net/fetch';
 import { wgs84ToLv95 } from './lv95';
 import { fetchFeatures, type DrinkingSource, type LatLon, type OsmFeatures } from './osm';
 import { fetchProtectedAreas, protectionIndex, type ProtectedArea } from './protection';

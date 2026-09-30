@@ -1,4 +1,4 @@
-import type { FetchFn } from './cog';
+import type { FetchFn } from '../net/fetch';
 
 export const STAC_ROOT = 'https://data.geo.admin.ch/api/stac/v0.9/collections';
 

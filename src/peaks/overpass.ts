@@ -1,3 +1,4 @@
+import type { BBox } from '../geo/bbox';
 import { distanceM } from '../geo/geodesy';
 
 /**
@@ -15,13 +16,6 @@ export interface Peak {
   name: string;
   /** Elevation from the OSM `ele` tag in meters, if present and plausible. */
   ele: number | null;
-}
-
-export interface BBox {
-  south: number;
-  west: number;
-  north: number;
-  east: number;
 }
 
 /**

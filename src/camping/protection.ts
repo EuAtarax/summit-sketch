@@ -1,5 +1,5 @@
-import type { BBox } from '../peaks/overpass';
-import type { FetchFn } from './cog';
+import type { BBox } from '../geo/bbox';
+import type { FetchFn } from '../net/fetch';
 import { wgs84ToLv95 } from './lv95';
 import { fillPolygon, type Point, type Polygon } from './raster';
 import type { GridGeometry } from './terrain';

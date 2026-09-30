@@ -1,3 +1,4 @@
+import type { FetchFn } from '../net/fetch';
 export const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 /** The public server allows at most one request per second. */
 export const MIN_REQUEST_GAP_MS = 1100;
@@ -28,8 +29,6 @@ interface NominatimItem {
   type?: string;
   boundingbox?: [string, string, string, string]; // south, north, west, east
 }
-
-export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
 
 /** `countryCodes` (e.g. "ch") limits results to those countries, which suits a national map. */
 export function buildSearchUrl(query: string, language: string, countryCodes?: string): string {

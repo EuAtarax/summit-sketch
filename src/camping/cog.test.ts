@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CogRaster, parseCogHeader, type FetchFn } from './cog';
+import type { FetchFn } from '../net/fetch';
+import { CogRaster, parseCogHeader } from './cog';
 import { buildTestTiff } from './testTiff';
 
 const WIDTH = 300;
