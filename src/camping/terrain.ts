@@ -88,11 +88,19 @@ export function tilesForWindow(e0: number, n0: number, size: { w: number; h: num
   return keys;
 }
 
+/**
+ * Open rasters by URL, least recently used first. A raster only holds its header (the decoded
+ * tiles live in the COG reader's bounded cache), so this can be generous; the cap only keeps a
+ * long session from growing without end.
+ */
 const rasters = new Map<string, CogRaster>();
+const MAX_OPEN_RASTERS = 256;
 
 function rasterFor(href: string, fetchFn?: FetchFn): CogRaster {
-  let r = rasters.get(href);
-  if (!r) rasters.set(href, (r = new CogRaster(href, fetchFn)));
+  const r = rasters.get(href) ?? new CogRaster(href, fetchFn);
+  rasters.delete(href);
+  rasters.set(href, r);
+  while (rasters.size > MAX_OPEN_RASTERS) rasters.delete(rasters.keys().next().value as string);
   return r;
 }
 

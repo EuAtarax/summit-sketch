@@ -133,6 +133,32 @@ describe('CogRaster.readWindow', () => {
     expect((await raster.readWindow(0, 0, 4, 4))[0]).toBeCloseTo(elevation(0, 0), 3);
   });
 
+  it('reads again after a failed attempt instead of keeping the failure', async () => {
+    for (const reportSize of [false, true]) {
+      const server = serve(makeFile(), reportSize);
+      let down = true;
+      const outage: FetchFn = async (url, init) =>
+        down ? new Response('busy', { status: 503 }) : server.fetchFn(url, init);
+      const raster = new CogRaster(`https://example.test/outage-${reportSize}.tif`, outage);
+      await expect(raster.readWindow(0, 0, 4, 4)).rejects.toThrow('HTTP 503');
+      down = false;
+      expect((await raster.readWindow(0, 0, 4, 4))[0]).toBeCloseTo(elevation(0, 0), 3);
+    }
+  });
+
+  it('reads again when the tiles fail after the header loaded', async () => {
+    const server = serve(makeFile(), true);
+    let down = false;
+    const outage: FetchFn = async (url, init) =>
+      down ? new Response('busy', { status: 503 }) : server.fetchFn(url, init);
+    const raster = new CogRaster('https://example.test/tiles-outage.tif', outage);
+    await raster.header();
+    down = true;
+    await expect(raster.readWindow(0, 0, 4, 4)).rejects.toThrow('HTTP 503');
+    down = false;
+    expect((await raster.readWindow(0, 0, 4, 4))[0]).toBeCloseTo(elevation(0, 0), 3);
+  });
+
   it('marks no-data cells and pixels outside the file as NaN', async () => {
     const { fetchFn } = serve(makeFile(-9999));
     const raster = new CogRaster('https://example.test/a.tif', fetchFn);

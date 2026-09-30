@@ -144,7 +144,11 @@ export function decodeTile(compressed: Uint8Array, header: CogHeader): Float32Ar
 
 const HEADER_BYTES = 64 * 1024;
 const MAX_CONCURRENT_TILES = 6;
-const TILE_CACHE_ENTRIES = 96;
+/**
+ * Decoded tiles kept across all rasters (128 x 128 float32 = 64 KB each, so about 32 MB): a
+ * 4 x 4 km window of 2 m terrain needs about 400. Least recently used tiles go first.
+ */
+const MAX_CACHED_TILES = 512;
 /** Files up to this size are fetched whole in one request instead of block by block. */
 const WHOLE_FILE_MAX_BYTES = 4 * 1024 * 1024;
 /** Requests in flight across all rasters; browsers refuse a flood of parallel requests. */
@@ -210,16 +214,32 @@ async function fetchBytes(
   }
 }
 
+const tileCache = new Map<string, Promise<Float32Array>>();
+
+/** Adds a tile to the shared cache; a failed load is forgotten so the next read tries again. */
+function cacheTile(key: string, tile: Promise<Float32Array>): void {
+  tileCache.set(key, tile);
+  tile.catch(() => {
+    if (tileCache.get(key) === tile) tileCache.delete(key);
+  });
+  while (tileCache.size > MAX_CACHED_TILES) {
+    tileCache.delete(tileCache.keys().next().value as string);
+  }
+}
+
+let nextRasterId = 1;
+
 /**
  * A remote COG read with HTTP range requests: only the header and the tiles a window touches
  * are downloaded (small files, like the 1.2 MB 2 m terrain tiles, are fetched whole in one
- * request), and decoded tiles are kept in a small in-memory cache.
+ * request and decoded at once), and decoded tiles are kept in a shared, bounded cache.
  */
 export class CogRaster {
+  private readonly id = nextRasterId++;
   private headerPromise: Promise<CogHeader> | null = null;
   private totalBytes: number | null = null;
-  private whole: Promise<Uint8Array> | null = null;
-  private readonly tiles = new Map<number, Promise<Float32Array>>();
+  /** A whole-file download in flight; its bytes are dropped once the tiles are decoded. */
+  private whole: Promise<Float32Array[]> | null = null;
 
   constructor(
     readonly url: string,
@@ -227,7 +247,14 @@ export class CogRaster {
   ) {}
 
   header(): Promise<CogHeader> {
-    this.headerPromise ??= this.loadHeader();
+    if (!this.headerPromise) {
+      const loading = this.loadHeader();
+      this.headerPromise = loading;
+      // A failed header (a dropped connection) must not stick: the next read tries again.
+      loading.catch(() => {
+        if (this.headerPromise === loading) this.headerPromise = null;
+      });
+    }
     return this.headerPromise;
   }
 
@@ -247,27 +274,47 @@ export class CogRaster {
     throw new Error(`TIFF directory of ${this.url} is unexpectedly large`);
   }
 
-  /** The compressed bytes of a tile: sliced from the whole file if it is small, else a range. */
-  private async tileBytes(header: CogHeader, index: number): Promise<Uint8Array> {
-    const start = header.tileOffsets[index]!;
-    const length = header.tileByteCounts[index]!;
-    if (this.totalBytes !== null && this.totalBytes <= WHOLE_FILE_MAX_BYTES) {
-      this.whole ??= fetchBytes(this.fetchFn, this.url).then((f) => f.bytes);
-      return (await this.whole).subarray(start, start + length);
-    }
-    return (await fetchBytes(this.fetchFn, this.url, { start, length })).bytes;
+  private tileKey(index: number): string {
+    return `${this.id}:${index}`;
+  }
+
+  /**
+   * Every tile of a small file from one download, all decoded at once and put in the cache;
+   * the compressed bytes are not kept.
+   */
+  private wholeFile(header: CogHeader): Promise<Float32Array[]> {
+    this.whole ??= fetchBytes(this.fetchFn, this.url)
+      .then(({ bytes }) => {
+        const tiles = header.tileOffsets.map((start, i) =>
+          decodeTile(bytes.subarray(start, start + header.tileByteCounts[i]!), header),
+        );
+        tiles.forEach((t, i) => cacheTile(this.tileKey(i), Promise.resolve(t)));
+        return tiles;
+      })
+      .finally(() => {
+        this.whole = null;
+      });
+    return this.whole;
   }
 
   private tile(header: CogHeader, index: number): Promise<Float32Array> {
-    let hit = this.tiles.get(index);
-    if (!hit) {
-      hit = this.tileBytes(header, index).then((bytes) => decodeTile(bytes, header));
-      this.tiles.set(index, hit);
-      while (this.tiles.size > TILE_CACHE_ENTRIES) {
-        this.tiles.delete(this.tiles.keys().next().value as number);
-      }
+    const key = this.tileKey(index);
+    const hit = tileCache.get(key);
+    if (hit) {
+      // Most recently used goes to the end.
+      tileCache.delete(key);
+      tileCache.set(key, hit);
+      return hit;
     }
-    return hit;
+    const small = this.totalBytes !== null && this.totalBytes <= WHOLE_FILE_MAX_BYTES;
+    const loading = small
+      ? this.wholeFile(header).then((tiles) => tiles[index]!)
+      : fetchBytes(this.fetchFn, this.url, {
+          start: header.tileOffsets[index]!,
+          length: header.tileByteCounts[index]!,
+        }).then(({ bytes }) => decodeTile(bytes, header));
+    cacheTile(key, loading);
+    return loading;
   }
 
   /**
