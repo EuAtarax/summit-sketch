@@ -1,4 +1,5 @@
-import { CogRaster, type FetchFn } from './cog';
+import type { FetchFn } from '../net/fetch';
+import { CogRaster } from './cog';
 import { lv95ToWgs84 } from './lv95';
 import { fetchTileAssets } from './stac';
 

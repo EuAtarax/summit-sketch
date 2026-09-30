@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildSearchUrl,
-  NominatimClient,
-  parseResults,
-  zoomForSpan,
-  type FetchFn,
-} from './nominatim';
+import type { FetchFn } from '../net/fetch';
+import { buildSearchUrl, NominatimClient, parseResults, zoomForSpan } from './nominatim';
 
 const ZUGSPITZE = {
   place_id: 1,

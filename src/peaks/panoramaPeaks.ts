@@ -1,5 +1,7 @@
-import type { BBox, Peak } from './overpass';
-import { fetchPeaksFromOverpass, type FetchFn } from './overpassFetch';
+import type { BBox } from '../geo/bbox';
+import type { Peak } from './overpass';
+import type { FetchFn } from '../net/fetch';
+import { fetchPeaksFromOverpass } from './overpassFetch';
 
 /** Meters per degree of latitude on the spherical earth used in geo/. */
 const M_PER_DEG_LAT = 111_194.9;

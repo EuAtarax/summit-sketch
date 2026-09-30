@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { nearestPeak, parseEle, parsePeaks, peakQuery, type Peak } from './overpass';
-import { PeakStore, peakTilesFor, type FetchFn } from './peakStore';
+import type { FetchFn } from '../net/fetch';
+import { PeakStore, peakTilesFor } from './peakStore';
 
 describe('parseEle', () => {
   it.each([

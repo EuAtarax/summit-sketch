@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { distanceM } from '../geo/geodesy';
 import { peakQuery, type Peak } from './overpass';
-import type { FetchFn } from './overpassFetch';
+import type { FetchFn } from '../net/fetch';
 import {
   bboxesForRadius,
   panoramaPeakKey,

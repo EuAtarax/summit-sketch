@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { BBox, Peak } from '../peaks/overpass';
+import type { BBox } from '../geo/bbox';
+import type { Peak } from '../peaks/overpass';
 import { attributionHtml } from './attribution';
 import { layerConfig, type MapLayerId } from './mapConfig';
 

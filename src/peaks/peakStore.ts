@@ -1,8 +1,8 @@
 import { lonLatToTile, tileToLonLat } from '../geo/tiles';
-import type { BBox, Peak } from './overpass';
-import { fetchPeaksFromOverpass, type FetchFn } from './overpassFetch';
-
-export type { FetchFn };
+import type { BBox } from '../geo/bbox';
+import type { Peak } from './overpass';
+import type { FetchFn } from '../net/fetch';
+import { fetchPeaksFromOverpass } from './overpassFetch';
 
 /** Peaks are fetched per slippy tile at this zoom (~40 × 30 km in the Alps). */
 export const PEAK_TILE_ZOOM = 10;

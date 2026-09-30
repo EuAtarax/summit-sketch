@@ -1,6 +1,6 @@
-import { OVERPASS_URL, parsePeaks, peakQuery, type BBox, type Peak } from './overpass';
-
-export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
+import type { BBox } from '../geo/bbox';
+import type { FetchFn } from '../net/fetch';
+import { OVERPASS_URL, parsePeaks, peakQuery, type Peak } from './overpass';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

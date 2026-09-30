@@ -3,6 +3,7 @@ import {
   distanceMap,
   distanceTransform,
   fillPolygon,
+  pointInPolygon,
   rasterizeLines,
   rasterizePoints,
   type Point,
@@ -154,5 +155,27 @@ describe('fillPolygon', () => {
     fillPolygon(target, [square(8, 8, 16, 16)], G, 2);
     expect(target[at(9, 9)]).toBe(2);
     expect(target[at(3, 3)]).toBe(1);
+  });
+});
+
+describe('pointInPolygon', () => {
+  const outer: Point[] = [
+    [0, 0],
+    [10, 0],
+    [10, 10],
+    [0, 10],
+  ];
+  const hole: Point[] = [
+    [4, 4],
+    [6, 4],
+    [6, 6],
+    [4, 6],
+  ];
+
+  it('finds points inside the outer ring and outside a hole', () => {
+    expect(pointInPolygon([2, 2], [outer, hole])).toBe(true);
+    expect(pointInPolygon([5, 5], [outer, hole])).toBe(false); // in the hole
+    expect(pointInPolygon([12, 5], [outer, hole])).toBe(false);
+    expect(pointInPolygon([5, 5], [outer])).toBe(true);
   });
 });

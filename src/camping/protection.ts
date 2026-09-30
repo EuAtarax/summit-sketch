@@ -1,5 +1,5 @@
-import type { BBox } from '../peaks/overpass';
-import type { FetchFn } from './cog';
+import type { BBox } from '../geo/bbox';
+import type { FetchFn } from '../net/fetch';
 import { wgs84ToLv95 } from './lv95';
 import { fillPolygon, type Point, type Polygon } from './raster';
 import type { GridGeometry } from './terrain';
@@ -56,21 +56,25 @@ interface IdentifyResult {
   attributes?: Record<string, unknown>;
 }
 
-const PERIOD = /(\d{1,2})\.(\d{1,2})\.?\s*[-–]\s*(\d{1,2})\.(\d{1,2})\.?/;
+const PERIOD = /(\d{1,2})\.(\d{1,2})\.?\s*[-–]\s*(\d{1,2})\.(\d{1,2})\.?/g;
 
 /**
  * Whether a protection period like "21.12. - 30.04." covers a date. Periods may wrap the
- * year end. A missing or unreadable period counts as in force: better to flag than to miss.
+ * year end, and a text may list several ("01.12. - 31.03. / 01.05. - 15.07."): any one that
+ * covers the date counts. A missing or unreadable period counts as in force: better to flag
+ * than to miss.
  */
 export function isInForce(period: string | null, date: Date): boolean {
-  const m = period ? PERIOD.exec(period) : null;
-  if (!m) return true;
-  const [d1, m1, d2, m2] = m.slice(1).map(Number) as [number, number, number, number];
+  const ranges = period ? [...period.matchAll(PERIOD)] : [];
+  if (ranges.length === 0) return true;
   const ordinal = (month: number, day: number) => month * 100 + day;
-  const start = ordinal(m1, d1);
-  const end = ordinal(m2, d2);
   const today = ordinal(date.getMonth() + 1, date.getDate());
-  return start <= end ? today >= start && today <= end : today >= start || today <= end;
+  return ranges.some((m) => {
+    const [d1, m1, d2, m2] = m.slice(1).map(Number) as [number, number, number, number];
+    const start = ordinal(m1, d1);
+    const end = ordinal(m2, d2);
+    return start <= end ? today >= start && today <= end : today >= start || today <= end;
+  });
 }
 
 function text(v: unknown): string | null {

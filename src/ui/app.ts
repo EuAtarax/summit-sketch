@@ -1,7 +1,8 @@
 import { metersPerPixel } from '../geo/tiles';
 import { CancelledComputeError, HorizonEngine, type EngineRun } from '../horizon/engine';
 import { labelCandidatesFor } from '../peaks/labelPipeline';
-import { nearestPeak, type BBox, type Peak } from '../peaks/overpass';
+import type { BBox } from '../geo/bbox';
+import { nearestPeak, type Peak } from '../peaks/overpass';
 import { PanoramaPeakLoader } from '../peaks/panoramaPeaks';
 import { createIndexedDbPeakCache } from '../peaks/peakCacheIdb';
 import { PeakStore } from '../peaks/peakStore';

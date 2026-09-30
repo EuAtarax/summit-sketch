@@ -23,7 +23,14 @@ import { createPanel } from './panel';
 import type { Progress } from './pipeline';
 import { createProgressBar, progressFraction, shortStage } from './progress';
 import { createSpotProgress } from './spotProgress';
-import { loadSettings, saveSettings, withPatch, type CampingSettings } from './settings';
+import {
+  loadSettings,
+  saveSettings,
+  settingsFromShare,
+  shareParams,
+  withPatch,
+  type CampingSettings,
+} from './settings';
 import { lookupSwissPlace, rulesFor } from './rules';
 import { NO_GOOD_SPOTS, restrictionNotice } from './summary';
 import { DTM_2M, windowBounds, windowCorners } from './terrain';
@@ -41,7 +48,9 @@ const BLUE = '#1E6EC8';
 
 // --- state ------------------------------------------------------------------------------
 
-let settings: CampingSettings = loadSettings();
+const params = new URLSearchParams(location.search);
+/** A shared link's area size and layer win over the stored ones. */
+let settings: CampingSettings = withPatch(loadSettings(), settingsFromShare(params));
 let spot: { lat: number; lon: number } | null = null;
 /** The latest finished analysis; its grids stay in the worker. */
 let result: ResultSummary | null = null;
@@ -65,6 +74,7 @@ const { map, showBase, showOverlays } = createBaseMap(mapEl, settings.base, (bas
 function update(patch: Partial<CampingSettings>): void {
   settings = withPatch(settings, patch);
   saveSettings(settings);
+  writeUrl(); // keeps the shareable link in step with area size and layer
   panel.syncFrom(settings);
 }
 
@@ -415,6 +425,8 @@ function writeUrl(): void {
   const url = new URL(location.href);
   url.searchParams.set('lat', spot.lat.toFixed(5));
   url.searchParams.set('lon', spot.lon.toFixed(5));
+  for (const [key, value] of Object.entries(shareParams(settings)))
+    url.searchParams.set(key, value);
   history.replaceState(null, '', url);
 }
 
@@ -429,7 +441,6 @@ map.on('click', (e: L.LeafletMouseEvent) => {
 });
 
 // A shared link opens straight on its spot.
-const params = new URLSearchParams(location.search);
 const startLat = Number(params.get('lat'));
 const startLon = Number(params.get('lon'));
 if (params.has('lat') && params.has('lon') && isInSwitzerland(startLat, startLon)) {

@@ -1,0 +1,15 @@
+# Cloudflare Worker that adds CORS to Austria's open elevation data (see src/worker.js and
+# README.md). Deploy from this folder: npx wrangler@4 login, then npx wrangler@4 deploy.
+name = "summit-sketch-proxy"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# Pages allowed to read through the proxy (the published app and the dev and preview servers).
+ALLOWED_ORIGINS = "https://euatarax.github.io,http://localhost:5173,http://localhost:4173"
+
+# Optional block cache in R2 (needs R2 enabled in the Cloudflare dashboard, then
+# npx wrangler@4 r2 bucket create summit-sketch-bev). Without it the worker passes ranges through.
+# [[r2_buckets]]
+# binding = "CACHE"
+# bucket_name = "summit-sketch-bev"

@@ -7,6 +7,8 @@ import {
   sanitizeNearby,
   sanitizeSettings,
   sanitizeSuitability,
+  settingsFromShare,
+  shareParams,
   SUITABILITY_CONTROLS,
   withPatch,
 } from './settings';
@@ -120,5 +122,14 @@ describe('withPatch', () => {
 
   it('applies ordinary changes unchanged', () => {
     expect(withPatch(DEFAULT_SETTINGS, { palette: 'magma' }).palette).toBe('magma');
+  });
+});
+
+describe('share links', () => {
+  it('round-trip the area size and layer, and ignore anything else', () => {
+    const shared = { ...DEFAULT_SETTINGS, areaKm: 4 as const, layer: 'slope' as const };
+    const params = new URLSearchParams(shareParams(shared));
+    expect(settingsFromShare(params)).toEqual({ areaKm: 4, layer: 'slope' });
+    expect(settingsFromShare(new URLSearchParams('km=3&layer=nope&lat=46'))).toEqual({});
   });
 });

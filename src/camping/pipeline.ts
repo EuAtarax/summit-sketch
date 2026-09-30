@@ -1,18 +1,25 @@
 import { createIdbCache, type Cache } from '../cache/idbCache';
-import type { BBox } from '../peaks/overpass';
+import type { BBox } from '../geo/bbox';
 import {
   dilateMask,
-  downsampleMean,
   flatSurfaceMask,
-  objectHeight,
   roughness,
   slopeDegrees,
+  vegetationHeight,
+  withLakes,
 } from './analysis';
-import type { FetchFn } from './cog';
+import type { FetchFn } from '../net/fetch';
 import { wgs84ToLv95 } from './lv95';
 import { fetchFeatures, type DrinkingSource, type LatLon, type OsmFeatures } from './osm';
 import { fetchProtectedAreas, protectionIndex, type ProtectedArea } from './protection';
-import { distanceMap, rasterizeLines, rasterizePoints, type Point } from './raster';
+import {
+  distanceMap,
+  fillPolygon,
+  rasterizeLines,
+  rasterizePoints,
+  type Point,
+  type Polygon,
+} from './raster';
 import {
   DSM_05M,
   DTM_2M,
@@ -60,6 +67,8 @@ export interface AnalysisResult {
   /** 1-based index into `areas` for each cell (0 = not protected); absent when unavailable. */
   protectionIndex?: Uint8Array;
   areas: AreaInfo[];
+  /** Outlines of `areas` (same order), to name every area at a point. Stays in the worker. */
+  areaShapes?: Polygon[][];
   /** Plain-language notes about data that could not be loaded. */
   warnings: string[];
   millis: number;
@@ -111,6 +120,20 @@ const toLv95 = (p: LatLon): Point => {
   const q = wgs84ToLv95(p.lat, p.lon);
   return [q.e, q.n];
 };
+
+/** 1 on cells inside a mapped lake, pond or river area. */
+function lakeMask(f: OsmFeatures, g: GridGeometry): Uint8Array {
+  const mask = new Uint8Array(g.width * g.height);
+  // `?? []`: answers cached by an older version have no lakes.
+  for (const lake of f.lakes ?? [])
+    fillPolygon(
+      mask,
+      lake.map((ring) => ring.map(toLv95)),
+      g,
+      1,
+    );
+  return mask;
+}
 
 /**
  * Distance rasters (meters) to trails, water and drinking water from OSM features. Features in
@@ -179,12 +202,8 @@ export async function runAnalysis(
   onProgress({ stage: 'analysis', done: 0, total: 1 });
   const slope = slopeDegrees(dtm.data, width, height, cell);
   const rough = roughness(dtm.data, width, height, cell);
-  const water = dilateMask(
-    flatSurfaceMask(dtm.data, width, height),
-    width,
-    height,
-    SHORE_BUFFER_CELLS,
-  );
+  // Lakes: flat surfaces now, mapped outlines once OpenStreetMap answers (below).
+  const flat = flatSurfaceMask(dtm.data, width, height);
 
   let canopy: Float32Array | undefined;
   if (params.canopy) {
@@ -199,8 +218,7 @@ export async function runAnalysis(
       (done, total) => onProgress({ stage: 'surface', done, total }),
       fetchFn,
     );
-    const coarse = downsampleMean(dsm.data, dsm.width, dsm.height, cell / DSM_05M.gsd);
-    canopy = objectHeight(coarse.data, dtm.data);
+    canopy = vegetationHeight(dsm.data, dtm.data, width, height, cell / DSM_05M.gsd);
   }
 
   const analysisDone = performance.now();
@@ -208,6 +226,14 @@ export async function runAnalysis(
   const [osmResult, protectionResult] = await Promise.allSettled([osm, protection]);
   const warnings: string[] = [];
   const geometry: GridGeometry = { e0: dtm.e0, n0: dtm.n0, cell, width, height };
+
+  const lakes = osmResult.status === 'fulfilled' ? lakeMask(osmResult.value, geometry) : null;
+  const water = dilateMask(
+    lakes ? withLakes(flat, lakes) : flat,
+    width,
+    height,
+    SHORE_BUFFER_CELLS,
+  );
 
   const result: AnalysisResult = {
     geometry,
@@ -230,6 +256,7 @@ export async function runAnalysis(
   if (protectionResult.status === 'fulfilled') {
     result.protectionIndex = protectionIndex(protectionResult.value, geometry);
     result.areas = protectionResult.value.map(areaInfo);
+    result.areaShapes = protectionResult.value.map((a) => a.polygons);
   } else {
     console.warn('Protected areas unavailable', protectionResult.reason);
     warnings.push(PROTECTION_UNAVAILABLE);
