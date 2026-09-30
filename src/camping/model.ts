@@ -1,6 +1,6 @@
 import { patchMinimum, pitchSuitability, type SuitabilityParams } from './analysis';
 import { overlayGrid, paintOverlay, type LayerId, type OverlayGrid } from './heatmap';
-import { lv95ToWgs84, wgs84ToLv95 } from './lv95';
+import { crsOf } from './crs';
 import type { PaletteId } from './palettes';
 import type { AnalysisResult } from './pipeline';
 import { hidesGround } from './protection';
@@ -72,7 +72,7 @@ export class CampModel {
     );
     this.spots = pickSpots(this.score, r.geometry).map((spot) => ({
       ...describeSpot(r, spot),
-      ...lv95ToWgs84(spot.e, spot.n),
+      ...crsOf(r.geometry).inverse(spot.e, spot.n),
     }));
     this.scoredWith = key;
     return this.spots;
@@ -104,7 +104,7 @@ export class CampModel {
   /** The numbers behind the cell at a position (hover readout), or null outside the data. */
   describeAt(lat: number, lon: number): string | null {
     const g = this.result.geometry;
-    const p = wgs84ToLv95(lat, lon);
+    const p = crsOf(g).forward(lat, lon);
     const col = Math.floor((p.e - g.e0) / g.cell);
     const row = Math.floor((g.n0 - p.n) / g.cell);
     if (col < 0 || row < 0 || col >= g.width || row >= g.height) return null;

@@ -1,4 +1,4 @@
-import { wgs84ToLv95 } from './lv95';
+import { crsOf } from './crs';
 import { paletteColor, paletteLut, type PaletteId } from './palettes';
 import { windowCorners, type GridGeometry } from './terrain';
 
@@ -123,11 +123,12 @@ export function overlayGrid(grid: GridGeometry): OverlayGrid {
   const height = aspect >= 1 ? Math.round(MAX_OVERLAY_PX / aspect) : MAX_OVERLAY_PX;
 
   const cells = new Int32Array(width * height).fill(-1);
+  const { forward } = crsOf(grid);
   for (let py = 0; py < height; py++) {
     const lat = north - ((py + 0.5) / height) * (north - south);
     for (let px = 0; px < width; px++) {
       const lon = west + ((px + 0.5) / width) * (east - west);
-      const p = wgs84ToLv95(lat, lon);
+      const p = forward(lat, lon);
       const col = Math.floor((p.e - grid.e0) / grid.cell);
       const row = Math.floor((grid.n0 - p.n) / grid.cell);
       if (col < 0 || row < 0 || col >= grid.width || row >= grid.height) continue;

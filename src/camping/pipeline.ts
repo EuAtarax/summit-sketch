@@ -9,7 +9,7 @@ import {
   withLakes,
 } from './analysis';
 import type { FetchFn } from '../net/fetch';
-import { wgs84ToLv95 } from './lv95';
+import { crsOf } from './crs';
 import { fetchFeatures, type DrinkingSource, type LatLon, type OsmFeatures } from './osm';
 import { fetchProtectedAreas, protectionIndex, type ProtectedArea } from './protection';
 import {
@@ -116,19 +116,23 @@ function wgs84Box(g: GridGeometry): BBox {
   return { south, west, north, east };
 }
 
-const toLv95 = (p: LatLon): Point => {
-  const q = wgs84ToLv95(p.lat, p.lon);
-  return [q.e, q.n];
-};
+/** Converts WGS84 points into a grid's coordinates. */
+const toGrid =
+  (g: GridGeometry) =>
+  (p: LatLon): Point => {
+    const q = crsOf(g).forward(p.lat, p.lon);
+    return [q.e, q.n];
+  };
 
 /** 1 on cells inside a mapped lake, pond or river area. */
 function lakeMask(f: OsmFeatures, g: GridGeometry): Uint8Array {
   const mask = new Uint8Array(g.width * g.height);
+  const toXY = toGrid(g);
   // `?? []`: answers cached by an older version have no lakes.
   for (const lake of f.lakes ?? [])
     fillPolygon(
       mask,
-      lake.map((ring) => ring.map(toLv95)),
+      lake.map((ring) => ring.map(toXY)),
       g,
       1,
     );
@@ -142,9 +146,10 @@ function lakeMask(f: OsmFeatures, g: GridGeometry): Uint8Array {
  */
 function featureDistances(f: OsmFeatures, g: GridGeometry) {
   const pad = Math.ceil(BOX_MARGIN_M / g.cell);
-  const trails = f.trails.map((l) => l.map(toLv95));
-  const water = f.water.map((l) => l.map(toLv95));
-  const drinking = f.drinking.map(toLv95);
+  const toXY = toGrid(g);
+  const trails = f.trails.map((l) => l.map(toXY));
+  const water = f.water.map((l) => l.map(toXY));
+  const drinking = f.drinking.map(toXY);
   return {
     trailDistance: distanceMap((grid) => rasterizeLines(trails, grid), g, pad),
     waterDistance: distanceMap((grid) => rasterizeLines(water, grid), g, pad),

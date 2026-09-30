@@ -1,6 +1,6 @@
 import type { FetchFn } from '../net/fetch';
 import { CogRaster } from './cog';
-import { lv95ToWgs84 } from './lv95';
+import { crsOf, type CrsId } from './crs';
 import { fetchTileAssets } from './stac';
 
 /** A metric raster window in LV95: cell (col, row) covers E e0 + col*cell, N n0 - row*cell. */
@@ -13,6 +13,8 @@ export interface GridWindow {
   height: number;
   /** Row-major from the north; NaN where there is no data. */
   data: Float32Array;
+  /** The grid's coordinate system; absent means Swiss LV95. */
+  crs?: CrsId;
 }
 
 /** Where and how large a window is, without its values. */
@@ -28,7 +30,7 @@ export function windowCorners(g: GridGeometry): [number, number][] {
     [g.e0 + w, g.n0 - h],
     [g.e0, g.n0 - h],
   ].map(([e, n]) => {
-    const p = lv95ToWgs84(e!, n!);
+    const p = crsOf(g).inverse(e!, n!);
     return [p.lat, p.lon] as [number, number];
   });
 }
@@ -39,6 +41,7 @@ export function windowCorners(g: GridGeometry): [number, number][] {
  */
 export function wgs84Envelope(g: GridGeometry, marginM = 0): [number, number, number, number] {
   const corners = windowCorners({
+    ...(g.crs ? { crs: g.crs } : {}),
     e0: g.e0 - marginM,
     n0: g.n0 + marginM,
     cell: g.cell,
