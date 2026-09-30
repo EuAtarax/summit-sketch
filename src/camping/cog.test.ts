@@ -79,7 +79,7 @@ describe('parseCogHeader', () => {
       originX: 0,
       originY: 0,
       pixelSize: 1,
-      compression: 8,
+      compression: 7, // JPEG
     });
     expect(() => parseCogHeader(otherCompression)).toThrow('compression');
   });

@@ -1,146 +1,7 @@
-import { decodeLzw } from './lzw';
-
 import type { FetchFn } from '../net/fetch';
+import { copyBlock, decodeBlock, parseCogHeader, type CogHeader, type TiffLevel } from './tiff';
 
-const TAG = {
-  imageWidth: 256,
-  imageLength: 257,
-  bitsPerSample: 258,
-  compression: 259,
-  predictor: 317,
-  tileWidth: 322,
-  tileLength: 323,
-  tileOffsets: 324,
-  tileByteCounts: 325,
-  sampleFormat: 339,
-  pixelScale: 33550,
-  tiepoint: 33922,
-  noData: 42113,
-} as const;
-
-const COMPRESSION_LZW = 5;
-
-/** What is needed to read tiles out of a Cloud-Optimized GeoTIFF with range requests. */
-export interface CogHeader {
-  width: number;
-  height: number;
-  tileWidth: number;
-  tileHeight: number;
-  tilesAcross: number;
-  tilesDown: number;
-  tileOffsets: number[];
-  tileByteCounts: number[];
-  noData: number | null;
-  /** Top-left corner of the top-left pixel in the file's coordinate system (pixel-is-area). */
-  originX: number;
-  originY: number;
-  /** Pixel size in the file's units (meters for LV95). */
-  pixelSize: number;
-}
-
-/**
- * Parses the first image's directory of a classic little-endian tiled float32 GeoTIFF with LZW
- * compression and no predictor (swissALTI3D and swissSURFACE3D). Anything else is rejected
- * loudly, so an unexpected file never turns into silent garbage. Throws a RangeError when the
- * directory extends past `bytes`.
- */
-export function parseCogHeader(bytes: Uint8Array): CogHeader {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (view.getUint16(0, true) !== 0x4949 || view.getUint16(2, true) !== 42) {
-    throw new Error('Unsupported TIFF: expected classic little-endian');
-  }
-  const ifd = view.getUint32(4, true);
-  const count = view.getUint16(ifd, true);
-
-  const entries = new Map<number, { type: number; count: number; valueOffset: number }>();
-  for (let i = 0; i < count; i++) {
-    const at = ifd + 2 + i * 12;
-    entries.set(view.getUint16(at, true), {
-      type: view.getUint16(at + 2, true),
-      count: view.getUint32(at + 4, true),
-      valueOffset: at + 8,
-    });
-  }
-  const need = (tag: number) => {
-    const e = entries.get(tag);
-    if (!e) throw new Error(`TIFF tag ${tag} is missing`);
-    return e;
-  };
-  /** Location of an entry's values: inline in the entry, or at the offset it stores. */
-  const valuesAt = (tag: number, itemSize: number) => {
-    const e = need(tag);
-    return e.count * itemSize <= 4 ? e.valueOffset : view.getUint32(e.valueOffset, true);
-  };
-  const scalar = (tag: number): number => {
-    const e = need(tag);
-    return e.type === 3 ? view.getUint16(e.valueOffset, true) : view.getUint32(e.valueOffset, true);
-  };
-  const longs = (tag: number): number[] => {
-    const e = need(tag);
-    const base = valuesAt(tag, 4);
-    return Array.from({ length: e.count }, (_, i) => view.getUint32(base + i * 4, true));
-  };
-  const doubles = (tag: number): number[] => {
-    const e = need(tag);
-    const base = valuesAt(tag, 8);
-    return Array.from({ length: e.count }, (_, i) => view.getFloat64(base + i * 8, true));
-  };
-
-  if (scalar(TAG.compression) !== COMPRESSION_LZW) throw new Error('Unsupported TIFF compression');
-  const predictor = entries.has(TAG.predictor) ? scalar(TAG.predictor) : 1;
-  if (predictor !== 1) throw new Error('Unsupported TIFF predictor');
-  if (scalar(TAG.bitsPerSample) !== 32 || scalar(TAG.sampleFormat) !== 3) {
-    throw new Error('Unsupported TIFF sample format: expected float32');
-  }
-
-  const width = scalar(TAG.imageWidth);
-  const height = scalar(TAG.imageLength);
-  const tileWidth = scalar(TAG.tileWidth);
-  const tileHeight = scalar(TAG.tileLength);
-  const tilesAcross = Math.ceil(width / tileWidth);
-  const tilesDown = Math.ceil(height / tileHeight);
-  const tileOffsets = longs(TAG.tileOffsets);
-  const tileByteCounts = longs(TAG.tileByteCounts);
-  if (tileOffsets.length !== tilesAcross * tilesDown) throw new Error('Unexpected tile count');
-
-  const [pixelSize] = doubles(TAG.pixelScale);
-  const tiepoint = doubles(TAG.tiepoint);
-  let noData: number | null = null;
-  if (entries.has(TAG.noData)) {
-    const e = need(TAG.noData);
-    const base = valuesAt(TAG.noData, 1);
-    let text = '';
-    for (let i = 0; i < e.count; i++) text += String.fromCharCode(view.getUint8(base + i));
-    const parsed = Number.parseFloat(text);
-    noData = Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return {
-    width,
-    height,
-    tileWidth,
-    tileHeight,
-    tilesAcross,
-    tilesDown,
-    tileOffsets,
-    tileByteCounts,
-    noData,
-    originX: tiepoint[3]!,
-    originY: tiepoint[4]!,
-    pixelSize: pixelSize!,
-  };
-}
-
-/** Decodes one compressed tile into meters (float32), row-major from the north. */
-export function decodeTile(compressed: Uint8Array, header: CogHeader): Float32Array {
-  const cells = header.tileWidth * header.tileHeight;
-  const raw = decodeLzw(compressed, cells * 4);
-  const values = new Float32Array(raw.buffer, raw.byteOffset, cells);
-  if (header.noData !== null) {
-    for (let i = 0; i < cells; i++) if (values[i] === header.noData) values[i] = Number.NaN;
-  }
-  return values;
-}
+export { parseCogHeader, type CogHeader } from './tiff';
 
 const HEADER_BYTES = 64 * 1024;
 const MAX_CONCURRENT_TILES = 6;
@@ -269,10 +130,12 @@ export class CogRaster {
       const { bytes } = await fetchBytes(this.fetchFn, this.url);
       const header = parseCogHeader(bytes);
       this.totalBytes = bytes.length;
-      this.decodeAll(bytes, header);
+      void this.decodeAll(bytes, header).catch(() => undefined); // failures are forgotten
       return header;
     }
-    for (const size of [HEADER_BYTES, 8 * HEADER_BYTES]) {
+    // A COG keeps every directory and its tile index up front; large files (a 50 km tile at
+    // 1 m) need a few hundred kilobytes for that.
+    for (const size of [HEADER_BYTES, 8 * HEADER_BYTES, 64 * HEADER_BYTES]) {
       const { bytes, totalBytes } = await fetchBytes(this.fetchFn, this.url, {
         start: 0,
         length: size,
@@ -287,8 +150,8 @@ export class CogRaster {
     throw new Error(`TIFF directory of ${this.url} is unexpectedly large`);
   }
 
-  private tileKey(index: number): string {
-    return `${this.id}:${index}`;
+  private tileKey(level: number, index: number): string {
+    return `${this.id}:${level}:${index}`;
   }
 
   /**
@@ -304,17 +167,18 @@ export class CogRaster {
     return this.whole;
   }
 
-  /** Decodes every tile of a whole file and puts them in the cache. */
-  private decodeAll(bytes: Uint8Array, header: CogHeader): Float32Array[] {
+  /** Decodes every full-resolution tile of a whole file and puts them in the cache. */
+  private decodeAll(bytes: Uint8Array, header: CogHeader): Promise<Float32Array[]> {
     const tiles = header.tileOffsets.map((start, i) =>
-      decodeTile(bytes.subarray(start, start + header.tileByteCounts[i]!), header),
+      decodeBlock(bytes.subarray(start, start + header.tileByteCounts[i]!), header),
     );
-    tiles.forEach((t, i) => cacheTile(this.tileKey(i), Promise.resolve(t)));
-    return tiles;
+    tiles.forEach((t, i) => cacheTile(this.tileKey(0, i), t));
+    return Promise.all(tiles);
   }
 
-  private tile(header: CogHeader, index: number): Promise<Float32Array> {
-    const key = this.tileKey(index);
+  private tile(header: CogHeader, levelIndex: number, index: number): Promise<Float32Array> {
+    const level: TiffLevel = header.levels[levelIndex]!;
+    const key = this.tileKey(levelIndex, index);
     const hit = tileCache.get(key);
     if (hit) {
       // Most recently used goes to the end.
@@ -323,27 +187,37 @@ export class CogRaster {
       return hit;
     }
     const small = this.totalBytes !== null && this.totalBytes <= WHOLE_FILE_MAX_BYTES;
-    const loading = small
-      ? this.wholeFile(header).then((tiles) => tiles[index]!)
-      : fetchBytes(this.fetchFn, this.url, {
-          start: header.tileOffsets[index]!,
-          length: header.tileByteCounts[index]!,
-        }).then(({ bytes }) => decodeTile(bytes, header));
+    const loading =
+      small && levelIndex === 0
+        ? this.wholeFile(header).then((tiles) => tiles[index]!)
+        : fetchBytes(this.fetchFn, this.url, {
+            start: level.tileOffsets[index]!,
+            length: level.tileByteCounts[index]!,
+          }).then(({ bytes }) => decodeBlock(bytes, level));
     cacheTile(key, loading);
     return loading;
   }
 
   /**
-   * Reads the pixel window [x0, x0 + width) x [y0, y0 + height) (pixel coordinates, row 0 in
-   * the north). Pixels outside the file and no-data pixels are NaN.
+   * Reads the pixel window [x0, x0 + width) x [y0, y0 + height) of one image (`level` 0 is the
+   * full resolution, 1 the first overview, ...; pixel coordinates of that image, row 0 in the
+   * north). Pixels outside the image and no-data pixels are NaN.
    */
-  async readWindow(x0: number, y0: number, width: number, height: number): Promise<Float32Array> {
+  async readWindow(
+    x0: number,
+    y0: number,
+    width: number,
+    height: number,
+    level = 0,
+  ): Promise<Float32Array> {
     const header = await this.header();
+    const image = header.levels[level];
+    if (!image) throw new Error(`${this.url} has no image ${level}`);
     const out = new Float32Array(width * height).fill(Number.NaN);
-    const tx0 = Math.max(0, Math.floor(x0 / header.tileWidth));
-    const tx1 = Math.min(header.tilesAcross - 1, Math.floor((x0 + width - 1) / header.tileWidth));
-    const ty0 = Math.max(0, Math.floor(y0 / header.tileHeight));
-    const ty1 = Math.min(header.tilesDown - 1, Math.floor((y0 + height - 1) / header.tileHeight));
+    const tx0 = Math.max(0, Math.floor(x0 / image.tileWidth));
+    const tx1 = Math.min(image.tilesAcross - 1, Math.floor((x0 + width - 1) / image.tileWidth));
+    const ty0 = Math.max(0, Math.floor(y0 / image.tileHeight));
+    const ty1 = Math.min(image.tilesDown - 1, Math.floor((y0 + height - 1) / image.tileHeight));
 
     const jobs: { tx: number; ty: number }[] = [];
     for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) jobs.push({ tx, ty });
@@ -352,36 +226,11 @@ export class CogRaster {
     const lane = async () => {
       while (next < jobs.length) {
         const { tx, ty } = jobs[next++]!;
-        const tile = await this.tile(header, ty * header.tilesAcross + tx);
-        copyTileIntoWindow(tile, header, tx, ty, out, x0, y0, width, height);
+        const tile = await this.tile(header, level, ty * image.tilesAcross + tx);
+        copyBlock(tile, image, tx, ty, out, x0, y0, width, height);
       }
     };
     await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_TILES, jobs.length) }, lane));
     return out;
-  }
-}
-
-/** Copies the overlap of one decoded tile with the window into the window's array. */
-function copyTileIntoWindow(
-  tile: Float32Array,
-  header: CogHeader,
-  tx: number,
-  ty: number,
-  out: Float32Array,
-  x0: number,
-  y0: number,
-  width: number,
-  height: number,
-): void {
-  const tileX = tx * header.tileWidth;
-  const tileY = ty * header.tileHeight;
-  const xa = Math.max(x0, tileX);
-  const xb = Math.min(x0 + width, tileX + header.tileWidth, header.width);
-  const ya = Math.max(y0, tileY);
-  const yb = Math.min(y0 + height, tileY + header.tileHeight, header.height);
-  for (let y = ya; y < yb; y++) {
-    const src = (y - tileY) * header.tileWidth + (xa - tileX);
-    const dst = (y - y0) * width + (xa - x0);
-    out.set(tile.subarray(src, src + (xb - xa)), dst);
   }
 }
