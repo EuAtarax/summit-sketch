@@ -240,6 +240,25 @@ export function withPatch(
   return next.areaKm > MAX_CANOPY_AREA_KM ? { ...next, canopy: false } : next;
 }
 
+/**
+ * The settings a shared link carries besides the position: the area size and the heatmap
+ * layer, so the receiver sees the same box and picture. Colours and the pitch model stay
+ * personal.
+ */
+export function shareParams(s: CampingSettings): Record<string, string> {
+  return { km: String(s.areaKm), layer: s.layer };
+}
+
+/** The valid shared settings in a link's query; anything unknown is ignored. */
+export function settingsFromShare(params: URLSearchParams): Partial<CampingSettings> {
+  const patch: Partial<CampingSettings> = {};
+  const km = AREA_SIZES_KM.find((a) => String(a) === params.get('km'));
+  if (km !== undefined) patch.areaKm = km;
+  const layer = LAYER_IDS.find((l) => l === params.get('layer'));
+  if (layer) patch.layer = layer;
+  return patch;
+}
+
 const STORAGE_KEY = 'summit-sketch:camping';
 
 export function loadSettings(): CampingSettings {
