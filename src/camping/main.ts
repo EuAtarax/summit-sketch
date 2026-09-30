@@ -15,11 +15,20 @@ import { LAYERS, makeColorizer, renderOverlay, type LayerId } from './heatmap';
 import { isInSwitzerland, lv95ToWgs84, wgs84ToLv95 } from './lv95';
 import { DRINKING_LABELS } from './osm';
 import { createPanel } from './panel';
+import { createProgressBar, progressFraction } from './progress';
 import type { AnalysisResult, Progress } from './pipeline';
 import { campScore, pickSpots, type Spot } from './scoring';
 import { loadSettings, saveSettings, withPatch, type CampingSettings } from './settings';
-import { describeCell, describeSpot, NO_GOOD_SPOTS, protectedLayer, summarize } from './summary';
+import {
+  describeCell,
+  describeSpot,
+  NO_GOOD_SPOTS,
+  protectedLayer,
+  protectionAt,
+  restrictionNotice,
+} from './summary';
 import { DTM_2M, windowBounds, windowCorners } from './terrain';
+import { createToast } from './toast';
 
 reloadWhenUpdated();
 
@@ -50,6 +59,8 @@ mapEl.id = 'map';
 const topBar = document.createElement('div');
 topBar.className = 'map-top';
 app.append(mapEl, topBar);
+
+const progressBar = createProgressBar(app);
 
 const { map, showBase, showOverlays } = createBaseMap(mapEl, settings.base, (base) =>
   update({ base }),
@@ -94,6 +105,8 @@ createSearchBar(
   (place) => map.setView([place.lat, place.lon], Math.max(place.zoom, 12)),
   (query, signal) => suggester.suggest(query, signal),
 );
+// After the search field, so it sits next to it (below it on phones).
+const showToast = createToast(topBar);
 
 // --- choosing a spot and analysing -------------------------------------------------------
 
@@ -104,7 +117,7 @@ const client = new AnalysisClient();
 
 function selectSpot(lat: number, lon: number): void {
   if (!isInSwitzerland(lat, lon)) {
-    panel.setStatus('That spot is outside Switzerland. This map covers Switzerland only.');
+    say('That spot is outside Switzerland. This map covers Switzerland only.');
     return;
   }
   spot = { lat, lon };
@@ -156,22 +169,29 @@ const describeProgress = (p: Progress): string =>
         ? 'Loading trails, water and protected areas...'
         : 'Analysing...';
 
+/** A message in the panel and, since the panel may be closed, as a short toast. */
+function say(text: string): void {
+  panel.setStatus(text);
+  showToast(text);
+}
+
 function startAnalysis(): void {
   if (!spot) return;
   drawOutline(false);
   panel.setStatus('Loading terrain...');
+  progressBar.update(0.03);
   const { e, n, half } = analysisWindow();
   client
-    .run({ e, n, halfSizeM: half, canopy: settings.canopy, date: Date.now() }, (p) =>
-      panel.setStatus(describeProgress(p)),
-    )
+    .run({ e, n, halfSizeM: half, canopy: settings.canopy, date: Date.now() }, (p) => {
+      panel.setStatus(describeProgress(p));
+      progressBar.update(progressFraction(p));
+    })
     .then(onResult)
     .catch((err: unknown) => {
       if (err instanceof SupersededError) return;
       console.error(err);
-      panel.setStatus(
-        "Couldn't load terrain data. Check your connection and try again by tapping the map.",
-      );
+      progressBar.finish();
+      say("Couldn't load terrain data. Check your connection and try again by tapping the map.");
     });
 }
 
@@ -183,6 +203,10 @@ function onResult(res: AnalysisResult): void {
   showDrinkingSources();
   rescore();
   drawOutline(true);
+  progressBar.finish();
+  const { e, n } = wgs84ToLv95(spot!.lat, spot!.lon);
+  const area = protectionAt(res, e, n);
+  if (area) showToast(restrictionNotice(area));
   if (window.matchMedia('(max-width: 640px)').matches) {
     panel.setOpen(false);
     update({ panelOpen: false });
@@ -227,7 +251,7 @@ function rescore(): void {
     spots.map((s) => describeSpot(result!, s)),
     NO_GOOD_SPOTS,
   );
-  panel.setStatus(summarize(result, suitability, score, settings.hideProtected));
+  panel.setStatus('');
 }
 
 let rescoreTimer = 0;
@@ -257,7 +281,7 @@ function renderLayer(): void {
   overlay = null;
   const values = valuesOf(settings.layer);
   if (!values) {
-    panel.setStatus(
+    say(
       settings.layer === 'canopy'
         ? 'Vegetation height needs "Use vegetation height" and an area of 1 km or less.'
         : `${LAYERS[settings.layer].label} is not available for this area.`,
@@ -292,15 +316,35 @@ function showSpots(): void {
       s.rank,
       L.marker([lat, lon], { icon, pane: OVERLAY_PANE })
         .bindPopup(`<strong>${item.title}</strong><br>${item.detail}`)
+        .on('click', () => focusSpot(s.rank))
         .addTo(spotLayer),
     );
   }
 }
 
+/** Width of the open side panel on wide screens, plus its margin: that part of the map is hidden. */
+const PANEL_COVER_PX = 364;
+const FOCUS_ZOOM = 17;
+
+/**
+ * Centers a best spot in the part of the map that is actually visible (not under the side
+ * panel) and zooms in on it. On phones the panel is closed first so the spot is not under it.
+ */
 function focusSpot(rank: number): void {
   const m = spotMarkers.get(rank);
   if (!m) return;
-  map.setView(m.getLatLng(), Math.max(map.getZoom(), 17));
+  const phone = window.matchMedia('(max-width: 640px)').matches;
+  if (phone && settings.panelOpen) {
+    panel.setOpen(false);
+    update({ panelOpen: false });
+  }
+  const covered = !phone && settings.panelOpen ? PANEL_COVER_PX : 0;
+  const at = m.getLatLng();
+  map.fitBounds(L.latLngBounds([at, at]), {
+    maxZoom: Math.max(map.getZoom(), FOCUS_ZOOM),
+    paddingTopLeft: [covered, 0],
+    animate: true,
+  });
   m.openPopup();
 }
 
@@ -365,7 +409,7 @@ setupHoverReadout();
 
 function locate(): void {
   if (!navigator.geolocation) {
-    panel.setStatus('Your browser cannot tell where you are. Tap the map instead.');
+    say('Your browser cannot tell where you are. Tap the map instead.');
     return;
   }
   panel.setStatus('Finding your location...');
@@ -374,7 +418,7 @@ function locate(): void {
       map.setView([pos.coords.latitude, pos.coords.longitude], SPOT_ZOOM);
       selectSpot(pos.coords.latitude, pos.coords.longitude);
     },
-    () => panel.setStatus("Couldn't get your location. Allow location access, or tap the map."),
+    () => say("Couldn't get your location. Allow location access, or tap the map."),
     { enableHighAccuracy: true, timeout: 15_000 },
   );
 }
@@ -391,7 +435,7 @@ map.on('click', (e: L.LeafletMouseEvent) => {
   // At country zoom a tap is too imprecise to be a spot: zoom in on it first.
   if (map.getZoom() < MIN_SPOT_ZOOM) {
     map.setView(e.latlng, SPOT_ZOOM - 1);
-    panel.setStatus('Now tap the exact spot you want to check.');
+    say('Now tap the exact spot you want to check.');
     return;
   }
   selectSpot(e.latlng.lat, e.latlng.lng);

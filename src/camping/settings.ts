@@ -1,7 +1,7 @@
 import { DEFAULT_SUITABILITY, type SuitabilityParams } from './analysis';
 import type { LayerId } from './heatmap';
 import { DEFAULT_PALETTE, isPaletteId, type PaletteId } from './palettes';
-import { DEFAULT_NEARBY, type NearbyParams, type NearbyPreference } from './scoring';
+import { DEFAULT_NEARBY, type NearbyParams } from './scoring';
 
 /** Side length of the analysed square, km. */
 export const AREA_SIZES_KM = [0.5, 1, 2, 4] as const;
@@ -114,7 +114,10 @@ export const SUITABILITY_CONTROLS: readonly {
   },
 ];
 
-/** The "near" preferences: each can be switched off and has a distance. */
+/**
+ * The trail, water and drinking-water preferences: one signed slider each (positive = within
+ * that distance, negative = at least that far away, 0 = off). Drinking water is near-only.
+ */
 export const NEARBY_CONTROLS: readonly {
   key: keyof NearbyParams;
   label: string;
@@ -125,27 +128,27 @@ export const NEARBY_CONTROLS: readonly {
 }[] = [
   {
     key: 'trail',
-    label: 'Near a trail',
-    min: 50,
+    label: 'Trails',
+    min: -1000,
     max: 1000,
     step: 25,
-    help: 'Prefers spots within this distance of a path, so you can reach them. Ground on the path itself is never suggested. Far from any trail the score is cut to about a sixth.',
+    help: '+ prefers spots within this distance of a path, so you can reach them; - prefers spots at least this far from any path. Ground on the path itself is never suggested.',
   },
   {
     key: 'water',
-    label: 'Near water',
-    min: 100,
+    label: 'Water',
+    min: -1500,
     max: 1500,
     step: 50,
-    help: 'Prefers spots within this distance of a stream or lake shore (halves the score when far away). It only counts if the water is mapped in OpenStreetMap.',
+    help: '+ prefers spots within this distance of a stream or lake shore; - prefers spots at least this far from water. It only counts water mapped in OpenStreetMap.',
   },
   {
     key: 'drinking',
-    label: 'Near drinking water',
-    min: 100,
+    label: 'Drinking water',
+    min: 0,
     max: 3000,
     step: 100,
-    help: 'Prefers spots within this distance of a fountain, tap or spring (about 40 % less when far away). Springs need treating; check the markers.',
+    help: 'Prefers spots within this distance of a fountain, tap or spring. Springs need treating; check the markers.',
   },
 ];
 
@@ -176,19 +179,25 @@ export function sanitizeSuitability(raw: unknown): SuitabilityParams {
   };
 }
 
-/** Coerces stored "near" preferences into in-range values. */
+/**
+ * Coerces stored "near" preferences into in-range signed distances. The first version stored
+ * `{ enabled, maxM }` per feature: off becomes 0, on keeps its distance.
+ */
 export function sanitizeNearby(raw: unknown): NearbyParams {
-  const r = (raw ?? {}) as Partial<Record<keyof NearbyParams, Partial<NearbyPreference>>>;
-  const one = (key: keyof NearbyParams): NearbyPreference => {
+  const r = (raw ?? {}) as Partial<Record<keyof NearbyParams, unknown>>;
+  const one = (key: keyof NearbyParams): number => {
     const c = NEARBY_CONTROLS.find((x) => x.key === key)!;
     const stored = r[key];
-    return {
-      enabled: typeof stored?.enabled === 'boolean' ? stored.enabled : DEFAULT_NEARBY[key].enabled,
-      maxM:
-        typeof stored?.maxM === 'number' && Number.isFinite(stored.maxM)
-          ? clamp(stored.maxM, c.min, c.max)
-          : DEFAULT_NEARBY[key].maxM,
-    };
+    const legacy = stored as { enabled?: unknown; maxM?: unknown } | null;
+    const value =
+      typeof legacy === 'object' && legacy !== null
+        ? legacy.enabled === false
+          ? 0
+          : legacy.maxM
+        : stored;
+    return typeof value === 'number' && Number.isFinite(value)
+      ? clamp(value, c.min, c.max)
+      : DEFAULT_NEARBY[key];
   };
   return { trail: one('trail'), water: one('water'), drinking: one('drinking') };
 }

@@ -5,7 +5,7 @@ import { OVERLAYS } from './overlays';
 import { PALETTES, paletteGradientCss, type PaletteId } from './palettes';
 import type { AreaInfo } from './pipeline';
 import type { NearbyParams } from './scoring';
-import type { SpotItem } from './summary';
+import { formatSignedMeters, type SpotItem } from './summary';
 import {
   AREA_SIZES_KM,
   DEFAULT_SETTINGS,
@@ -63,9 +63,8 @@ function pitchSection(
   let params = initial;
   const sliders = new Map<keyof SuitabilityParams, ReturnType<typeof sliderRow>>();
   const rows = SUITABILITY_CONTROLS.map((c) => {
-    const row = sliderRow(
-      { ...c, value: initial[c.key], recommended: DEFAULT_SETTINGS.suitability[c.key] },
-      (value) => onChange((params = { ...params, [c.key]: value })),
+    const row = sliderRow({ ...c, value: initial[c.key] }, (value) =>
+      onChange((params = { ...params, [c.key]: value })),
     );
     sliders.set(c.key, row);
     return row.node;
@@ -83,7 +82,10 @@ function pitchSection(
   return group('Tune the pitch', ...rows, reset);
 }
 
-/** The "Near trails and water" section: a switch and a distance for each preference. */
+/**
+ * The "Trails, water and drinking water" section: one signed slider each (plus = within that
+ * distance, minus = at least that far away, "Off" in the middle).
+ */
 function nearbySection(
   initial: NearbyParams,
   showDrinking: boolean,
@@ -91,30 +93,14 @@ function nearbySection(
   onDrinking: (show: boolean) => void,
 ): HTMLElement {
   let nearby = initial;
-  const rows = NEARBY_CONTROLS.map((c) => {
-    const toggle = checkRow(c.label, initial[c.key].enabled, (enabled) => {
-      nearby = { ...nearby, [c.key]: { ...nearby[c.key], enabled } };
-      onNearby(nearby);
-    });
-    const slider = sliderRow(
-      {
-        label: 'Within',
-        unit: ' m',
-        min: c.min,
-        max: c.max,
-        step: c.step,
-        value: initial[c.key].maxM,
-        help: c.help,
-      },
-      (maxM) => {
-        nearby = { ...nearby, [c.key]: { ...nearby[c.key], maxM } };
-        onNearby(nearby);
-      },
-    );
-    return el('div', { className: 'nearby' }, toggle.node, slider.node);
-  });
+  const rows = NEARBY_CONTROLS.map(
+    (c) =>
+      sliderRow({ ...c, unit: ' m', value: initial[c.key], format: formatSignedMeters }, (value) =>
+        onNearby((nearby = { ...nearby, [c.key]: value })),
+      ).node,
+  );
   const markers = checkRow('Show drinking-water sources on the map', showDrinking, onDrinking);
-  return group('Near trails and water', ...rows, markers.node);
+  return group('Trails and water', ...rows, markers.node);
 }
 
 /** The overlays section: checkboxes for trails and protected areas, grouped by kind. */
@@ -149,6 +135,42 @@ function overlaysSection(
   );
 }
 
+interface Legend {
+  node: HTMLElement;
+  bar: HTMLElement;
+  worst: HTMLElement;
+  best: HTMLElement;
+}
+
+/** The colour scale with the captions of its two ends. */
+function makeLegend(): Legend {
+  const bar = el('div', { className: 'legend-bar' });
+  const worst = el('span');
+  const best = el('span');
+  const node = el(
+    'div',
+    { className: 'legend' },
+    bar,
+    el('div', { className: 'legend-ends' }, worst, best),
+  );
+  return { node, bar, worst, best };
+}
+
+/** A bare slider (no visible label) for the opacity of the heatmap. */
+function makeOpacity(initial: number, onInput: (opacity: number) => void): HTMLInputElement {
+  const input = el('input', {
+    type: 'range',
+    className: 'opacity',
+    min: '0.1',
+    max: '1',
+    step: '0.05',
+    value: String(initial),
+  });
+  input.setAttribute('aria-label', 'Heatmap opacity');
+  input.oninput = () => onInput(Number(input.value));
+  return input;
+}
+
 const areaText = (a: AreaInfo): string => {
   const season = a.period
     ? `${a.period}${a.inForce ? ' (in force today)' : ' (not in force today)'}`
@@ -166,15 +188,8 @@ export function createPanel(
   status.setAttribute('role', 'status');
   const warnings = el('div', { className: 'notice' });
   warnings.hidden = true;
-  const legendBar = el('div', { className: 'legend-bar' });
-  const legendWorst = el('span');
-  const legendBest = el('span');
-  const legend = el(
-    'div',
-    { className: 'legend' },
-    legendBar,
-    el('div', { className: 'legend-ends' }, legendWorst, legendBest),
-  );
+  const legend = makeLegend();
+  const chipLegend = makeLegend();
   const panorama = el('a', {
     className: 'button secondary',
     textContent: 'See the panorama from here',
@@ -220,14 +235,10 @@ export function createPanel(
     initial.palette,
     (v) => handlers.onViewChange({ palette: v }),
   );
-  const opacity = el('input', {
-    type: 'range',
-    min: '0.1',
-    max: '1',
-    step: '0.05',
-    value: String(initial.opacity),
-  });
-  opacity.oninput = () => handlers.onViewChange({ opacity: Number(opacity.value) });
+  const onOpacity = (opacity: number) => handlers.onViewChange({ opacity });
+  const opacity = makeOpacity(initial.opacity, onOpacity);
+  const chipOpacity = makeOpacity(initial.opacity, onOpacity);
+  area.setAttribute('aria-label', 'Area size');
 
   const body = el(
     'section',
@@ -239,7 +250,7 @@ export function createPanel(
     }),
     status,
     warnings,
-    legend,
+    el('div', { className: 'view-controls' }, legend.node, opacity, area),
     tabs([
       {
         label: 'Spots',
@@ -268,11 +279,9 @@ export function createPanel(
           { className: 'tab-body' },
           group(
             'Area and heatmap',
-            field('Area size', area, 'The square around the spot you tap.'),
             canopy.node,
             field('Heatmap', layer),
             field('Colours', palette),
-            field('Opacity', opacity),
           ),
           overlaysSection(initial, (overlays) => handlers.onViewChange({ overlays })),
         ),
@@ -290,12 +299,8 @@ export function createPanel(
 
   // While the panel is closed, a chip at the bottom keeps the result, the legend and the best
   // spots in sight.
-  const chipText = el('span');
-  const chipBar = el('div', { className: 'legend-bar' });
-  const chipMain = el('button', { type: 'button', className: 'chip-main' }, chipText, chipBar);
-  chipMain.setAttribute('aria-label', 'Result summary. Open the options');
   const chipSpots = el('ol', { className: 'chip-spots' });
-  const chip = el('div', { className: 'status-chip' }, chipMain, chipSpots);
+  const chip = el('div', { className: 'status-chip' }, chipLegend.node, chipOpacity, chipSpots);
   chip.hidden = true;
 
   const setOpen = (open: boolean) => {
@@ -307,7 +312,6 @@ export function createPanel(
     setOpen(open);
     handlers.onOpenChange(open);
   };
-  chipMain.onclick = () => userSetOpen(true);
   toggle.onclick = () => userSetOpen(body.hidden !== false);
 
   parent.append(toggle, body, chip);
@@ -341,7 +345,6 @@ export function createPanel(
   return {
     setStatus(text) {
       status.textContent = text;
-      chipText.textContent = text;
     },
     setWarnings(texts) {
       warnings.replaceChildren(...texts.map((t) => el('p', { textContent: t })));
@@ -349,10 +352,12 @@ export function createPanel(
     },
     setLegend(id, paletteId) {
       const def = LAYERS[id];
-      legendBar.style.background = def.legend ?? paletteGradientCss(paletteId);
-      chipBar.style.background = legendBar.style.background;
-      legendWorst.textContent = def.worst;
-      legendBest.textContent = def.best;
+      const background = def.legend ?? paletteGradientCss(paletteId);
+      for (const l of [legend, chipLegend]) {
+        l.bar.style.background = background;
+        l.worst.textContent = def.worst;
+        l.best.textContent = def.best;
+      }
     },
     setPanoramaLink(href) {
       panorama.hidden = href === null;
@@ -378,6 +383,8 @@ export function createPanel(
     syncFrom(next) {
       canopy.input.checked = next.canopy;
       canopy.input.disabled = next.areaKm > MAX_CANOPY_AREA_KM;
+      area.value = String(next.areaKm);
+      opacity.value = chipOpacity.value = String(next.opacity);
     },
   };
 }

@@ -270,15 +270,3 @@ export function patchMinimum(
   }
   return out;
 }
-
-/** Share of cells above a threshold among the cells with data, for quick sanity numbers. */
-export function shareAbove(data: Float32Array, threshold: number): number {
-  let valid = 0;
-  let above = 0;
-  for (const v of data) {
-    if (Number.isNaN(v)) continue;
-    valid++;
-    if (v >= threshold) above++;
-  }
-  return valid ? above / valid : 0;
-}
