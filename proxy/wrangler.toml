@@ -1,8 +1,10 @@
 # Cloudflare Worker that adds CORS to Austria's open elevation data (see src/worker.js and
 # README.md). Deploy from this folder: npx wrangler@4 login, then npx wrangler@4 deploy.
-name = "summit-sketch-proxy"
+name = "camp-spots"
 main = "src/worker.js"
 compatibility_date = "2026-09-01"
+# Only the one public address; no per-version preview URLs.
+preview_urls = false
 
 [vars]
 # Pages allowed to read through the proxy (the published app and the dev and preview servers).

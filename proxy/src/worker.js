@@ -43,6 +43,18 @@ const text = (status, message, headers) =>
   new Response(message, { status, headers: { ...headers, 'Content-Type': 'text/plain' } });
 
 /**
+ * A byte range from the BEV. One retry: a single dropped answer would otherwise fail the whole
+ * analysis in the app.
+ * @returns {Promise<Response>}
+ */
+async function upstream(path, start, end) {
+  const ask = () => fetch(UPSTREAM + path, { headers: { Range: `bytes=${start}-${end}` } });
+  const first = await ask().catch(() => null);
+  if (first?.status === 206) return first;
+  return ask();
+}
+
+/**
  * One 1 MiB block of a file, from R2 when present, else from the BEV (and then kept in R2).
  * @returns {Promise<{ bytes: Uint8Array, total: number } | null>}
  */
@@ -55,9 +67,7 @@ async function block(env, ctx, path, index) {
       total: Number(cached.customMetadata?.total),
     };
   }
-  const res = await fetch(UPSTREAM + path, {
-    headers: { Range: `bytes=${index * BLOCK}-${(index + 1) * BLOCK - 1}` },
-  });
+  const res = await upstream(path, index * BLOCK, (index + 1) * BLOCK - 1);
   if (res.status !== 206) return null;
   const total = Number(/\/(\d+)$/.exec(res.headers.get('Content-Range') ?? '')?.[1]);
   if (!Number.isFinite(total)) return null;
@@ -68,9 +78,7 @@ async function block(env, ctx, path, index) {
 
 /** The range from the BEV directly (no R2 bound): the bytes asked for, nothing more. */
 async function passThrough(path, range, cors) {
-  const res = await fetch(UPSTREAM + path, {
-    headers: { Range: `bytes=${range.start}-${range.end}` },
-  });
+  const res = await upstream(path, range.start, range.end);
   if (res.status !== 206) return text(502, `The BEV server answered ${res.status}.`, cors);
   return new Response(res.body, {
     status: 206,
