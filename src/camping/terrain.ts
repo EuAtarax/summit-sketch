@@ -111,7 +111,7 @@ export function tilesForWindow(e0: number, n0: number, size: { w: number; h: num
 const rasters = new Map<string, CogRaster>();
 const MAX_OPEN_RASTERS = 256;
 
-function rasterFor(href: string, smallFile: boolean, fetchFn?: FetchFn): CogRaster {
+export function rasterFor(href: string, smallFile: boolean, fetchFn?: FetchFn): CogRaster {
   const r = rasters.get(href) ?? new CogRaster(href, fetchFn, smallFile);
   rasters.delete(href);
   rasters.set(href, r);

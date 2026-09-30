@@ -20,22 +20,23 @@ import {
   type Point,
   type Polygon,
 } from './raster';
-import {
-  DSM_05M,
-  DTM_2M,
-  loadWindow,
-  wgs84Envelope,
-  windowBounds,
-  type GridGeometry,
-} from './terrain';
+import { COUNTRIES, type CountryId } from './countries';
+import { fetchEeaAreas } from './eea';
+import { SOURCES } from './sources';
+import { wgs84Envelope, windowBounds, type GridGeometry } from './terrain';
+
+/** The analysis grid's cell size, meters (all countries). */
+export const CELL_M = 2;
 
 export interface AnalysisParams {
-  /** Center of the area in LV95, meters. */
+  /** Whose terrain to read; absent means Switzerland. */
+  country?: CountryId;
+  /** Center of the area in the country's grid (LV95 or EPSG:3035), meters. */
   e: number;
   n: number;
   /** Half the side length of the square, meters. */
   halfSizeM: number;
-  /** Also load the 0.5 m surface model to get vegetation height (large download). */
+  /** Also load the surface model to get vegetation height (large download). */
   canopy: boolean;
   /** The day the protection periods are checked against, in ms since the epoch. */
   date: number;
@@ -96,6 +97,8 @@ const SHORE_BUFFER_CELLS = 2;
 
 export const OSM_UNAVAILABLE =
   'Trails, water and drinking water could not be loaded (the OpenStreetMap server is busy). The result ignores them.';
+export const NO_TERRAIN =
+  'There is no terrain data for this place. Choose a spot inside the covered countries.';
 export const PROTECTION_UNAVAILABLE =
   'Protected areas could not be loaded. Check the rules that apply before camping.';
 
@@ -179,8 +182,14 @@ export async function runAnalysis(
 ): Promise<AnalysisResult> {
   const started = performance.now();
   const { fetchFn } = deps;
-  const bounds = windowBounds(params.e, params.n, params.halfSizeM, DTM_2M.gsd);
-  const box = wgs84Box({ ...bounds, cell: DTM_2M.gsd });
+  const country = COUNTRIES[params.country ?? 'ch'];
+  const source = SOURCES[country.id];
+  const geometry: GridGeometry = {
+    ...windowBounds(params.e, params.n, params.halfSizeM, CELL_M),
+    cell: CELL_M,
+    crs: country.crs,
+  };
+  const box = wgs84Box(geometry);
 
   // Start the slow network calls first; the terrain is read while they are in flight.
   const osmCache = deps.osmCache ?? defaultOsmCache();
@@ -189,20 +198,25 @@ export async function runAnalysis(
     ...(osmCache ? { cache: osmCache } : {}),
     ...(deps.osmBackoffMs ? { backoffMs: deps.osmBackoffMs } : {}),
   });
-  const protection = fetchProtectedAreas(box, new Date(params.date), fetchFn);
+  const protection =
+    country.protection === 'bafu'
+      ? fetchProtectedAreas(box, new Date(params.date), fetchFn)
+      : fetchEeaAreas(box, Number(country.crs.slice(5)), fetchFn);
   // A failure is handled below; this only keeps an early rejection from being reported as unhandled.
   osm.catch(() => undefined);
   protection.catch(() => undefined);
 
-  const dtm = await loadWindow(
-    DTM_2M,
-    params.e,
-    params.n,
-    params.halfSizeM,
+  const terrain = await source.terrain(
+    geometry,
     (done, total) => onProgress({ stage: 'terrain', done, total }),
     fetchFn,
   );
-  const { width, height, cell } = dtm;
+  const { width, height, cell } = geometry;
+  let known = 0;
+  for (let i = 0; i < terrain.length && known < terrain.length / 20; i++)
+    if (terrain[i] === terrain[i]) known++;
+  if (known < terrain.length / 20) throw new Error(NO_TERRAIN);
+  const dtm = { data: terrain };
   const terrainDone = performance.now();
   onProgress({ stage: 'analysis', done: 0, total: 1 });
   const slope = slopeDegrees(dtm.data, width, height, cell);
@@ -212,25 +226,19 @@ export async function runAnalysis(
 
   let canopy: Float32Array | undefined;
   if (params.canopy) {
-    // The same window in the 0.5 m surface model: centered exactly on the terrain window so
-    // the two grids line up cell for cell after averaging 4 x 4 cells down to 2 m.
-    const size = width * cell;
-    const dsm = await loadWindow(
-      DSM_05M,
-      dtm.e0 + size / 2,
-      dtm.n0 - size / 2,
-      size / 2,
+    // The surface model on the same grid, subdivided (0.5 m in Switzerland, 1 m elsewhere).
+    const surface = await source.surface(
+      geometry,
       (done, total) => onProgress({ stage: 'surface', done, total }),
       fetchFn,
     );
-    canopy = vegetationHeight(dsm.data, dtm.data, width, height, cell / DSM_05M.gsd);
+    canopy = vegetationHeight(surface.data, dtm.data, width, height, surface.factor);
   }
 
   const analysisDone = performance.now();
   onProgress({ stage: 'features', done: 0, total: 1 });
   const [osmResult, protectionResult] = await Promise.allSettled([osm, protection]);
   const warnings: string[] = [];
-  const geometry: GridGeometry = { e0: dtm.e0, n0: dtm.n0, cell, width, height };
 
   const lakes = osmResult.status === 'fulfilled' ? lakeMask(osmResult.value, geometry) : null;
   const water = dilateMask(
