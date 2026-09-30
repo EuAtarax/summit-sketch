@@ -241,9 +241,15 @@ export class CogRaster {
   /** A whole-file download in flight; its bytes are dropped once the tiles are decoded. */
   private whole: Promise<Float32Array[]> | null = null;
 
+  /**
+   * `wholeFile`: the caller knows the file is small, so it is fetched whole in one plain
+   * request from the start (no separate header range). A plain GET is what the service worker
+   * and the HTTP cache can store, so the file is downloaded only once.
+   */
   constructor(
     readonly url: string,
     private readonly fetchFn: FetchFn = (u, init) => fetch(u, init),
+    private readonly wholeFileKnown = false,
   ) {}
 
   header(): Promise<CogHeader> {
@@ -259,6 +265,13 @@ export class CogRaster {
   }
 
   private async loadHeader(): Promise<CogHeader> {
+    if (this.wholeFileKnown) {
+      const { bytes } = await fetchBytes(this.fetchFn, this.url);
+      const header = parseCogHeader(bytes);
+      this.totalBytes = bytes.length;
+      this.decodeAll(bytes, header);
+      return header;
+    }
     for (const size of [HEADER_BYTES, 8 * HEADER_BYTES]) {
       const { bytes, totalBytes } = await fetchBytes(this.fetchFn, this.url, {
         start: 0,
@@ -284,17 +297,20 @@ export class CogRaster {
    */
   private wholeFile(header: CogHeader): Promise<Float32Array[]> {
     this.whole ??= fetchBytes(this.fetchFn, this.url)
-      .then(({ bytes }) => {
-        const tiles = header.tileOffsets.map((start, i) =>
-          decodeTile(bytes.subarray(start, start + header.tileByteCounts[i]!), header),
-        );
-        tiles.forEach((t, i) => cacheTile(this.tileKey(i), Promise.resolve(t)));
-        return tiles;
-      })
+      .then(({ bytes }) => this.decodeAll(bytes, header))
       .finally(() => {
         this.whole = null;
       });
     return this.whole;
+  }
+
+  /** Decodes every tile of a whole file and puts them in the cache. */
+  private decodeAll(bytes: Uint8Array, header: CogHeader): Float32Array[] {
+    const tiles = header.tileOffsets.map((start, i) =>
+      decodeTile(bytes.subarray(start, start + header.tileByteCounts[i]!), header),
+    );
+    tiles.forEach((t, i) => cacheTile(this.tileKey(i), Promise.resolve(t)));
+    return tiles;
   }
 
   private tile(header: CogHeader, index: number): Promise<Float32Array> {

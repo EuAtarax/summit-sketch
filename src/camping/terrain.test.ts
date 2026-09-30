@@ -40,7 +40,9 @@ describe('tilesForWindow', () => {
 const surface = (e: number, n: number) => 1000 + 0.01 * (e - 2722000) + 0.02 * (n - 1204000);
 
 describe('loadWindow', () => {
-  const product: Product = { collection: 'ch.test.window', gsd: 2 };
+  const product: Product = { collection: 'ch.test.window', gsd: 2, smallFiles: false };
+  /** Requests for tile files, with their Range header (null for a whole file). */
+  const fileRequests: (string | null)[] = [];
   const tiles = new Map<string, Uint8Array>();
 
   beforeAll(() => {
@@ -68,20 +70,25 @@ describe('loadWindow', () => {
 
   const fetchFn: FetchFn = async (url, init) => {
     if (url.includes('/items')) {
+      // One URL per collection, so the two reading modes never share a raster.
+      const collection = /collections\/([^/]+)\/items/.exec(url)![1]!;
       const features = [...tiles.keys()].map((key) => ({
         id: `test_2019_${key}`,
         assets: {
-          a: { href: `https://x/${key}.tif`, type: 'image/tiff; application=geotiff', 'eo:gsd': 2 },
+          a: {
+            href: `https://x/${collection}/${key}.tif`,
+            type: 'image/tiff; application=geotiff',
+            'eo:gsd': 2,
+          },
         },
       }));
       return new Response(JSON.stringify({ features }), { status: 200 });
     }
     const file = tiles.get(/\/(\d{4}-\d{4})\.tif/.exec(url)![1]!)!;
-    const [start, end] = new Headers(init.headers)
-      .get('Range')!
-      .replace('bytes=', '')
-      .split('-')
-      .map(Number) as [number, number];
+    const range = new Headers(init.headers).get('Range');
+    fileRequests.push(range);
+    if (!range) return new Response(file.slice(), { status: 200 });
+    const [start, end] = range.replace('bytes=', '').split('-').map(Number) as [number, number];
     return new Response(file.slice(start, end + 1), { status: 206 });
   };
 
@@ -100,6 +107,15 @@ describe('loadWindow', () => {
       expect(w.data[row * w.width + col]).toBeCloseTo(surface(e, n), 2);
     }
     expect(w.data.some(Number.isNaN)).toBe(false);
+  });
+
+  it('fetches small files whole, one plain request per file, with the same values', async () => {
+    fileRequests.length = 0;
+    const small = { ...product, collection: 'ch.test.small', smallFiles: true };
+    const w = await loadWindow(small, 2723000, 1204500, 100, undefined, fetchFn);
+    expect(fileRequests).toEqual([null, null]); // two files, no ranges
+    const ranged = await loadWindow(product, 2723000, 1204500, 100, undefined, fetchFn);
+    expect(Array.from(w.data)).toEqual(Array.from(ranged.data));
   });
 
   it('leaves NaN where no tile exists and reports progress', async () => {

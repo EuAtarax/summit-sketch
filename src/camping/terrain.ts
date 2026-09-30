@@ -53,12 +53,23 @@ export interface Product {
   collection: string;
   /** Ground sampling distance in meters. */
   gsd: number;
+  /** Files are small enough to fetch whole (and cache) instead of reading them block by block. */
+  smallFiles: boolean;
 }
 
-export const DTM_2M: Product = { collection: 'ch.swisstopo.swissalti3d', gsd: 2 };
-export const DTM_05M: Product = { collection: 'ch.swisstopo.swissalti3d', gsd: 0.5 };
+/** 1.2 MB per 1 km tile. */
+export const DTM_2M: Product = { collection: 'ch.swisstopo.swissalti3d', gsd: 2, smallFiles: true };
+export const DTM_05M: Product = {
+  collection: 'ch.swisstopo.swissalti3d',
+  gsd: 0.5,
+  smallFiles: false,
+};
 /** Surface model with buildings and vegetation; only published at 0.5 m (about 17 MB per km2). */
-export const DSM_05M: Product = { collection: 'ch.swisstopo.swisssurface3d-raster', gsd: 0.5 };
+export const DSM_05M: Product = {
+  collection: 'ch.swisstopo.swisssurface3d-raster',
+  gsd: 0.5,
+  smallFiles: false,
+};
 
 const TILE_M = 1000;
 /** Extra search margin around a window when looking up tiles, meters. */
@@ -96,8 +107,8 @@ export function tilesForWindow(e0: number, n0: number, size: { w: number; h: num
 const rasters = new Map<string, CogRaster>();
 const MAX_OPEN_RASTERS = 256;
 
-function rasterFor(href: string, fetchFn?: FetchFn): CogRaster {
-  const r = rasters.get(href) ?? new CogRaster(href, fetchFn);
+function rasterFor(href: string, smallFile: boolean, fetchFn?: FetchFn): CogRaster {
+  const r = rasters.get(href) ?? new CogRaster(href, fetchFn, smallFile);
   rasters.delete(href);
   rasters.set(href, r);
   while (rasters.size > MAX_OPEN_RASTERS) rasters.delete(rasters.keys().next().value as string);
@@ -134,7 +145,7 @@ export async function loadWindow(
     keys.map(async (key) => {
       const asset = assets.get(key);
       if (asset) {
-        const raster = rasterFor(asset.href, fetchFn);
+        const raster = rasterFor(asset.href, product.smallFiles, fetchFn);
         const header = await raster.header();
         // Overlap of the window with this tile, in window cells and in tile pixels.
         const ea = Math.max(b.e0, header.originX);
