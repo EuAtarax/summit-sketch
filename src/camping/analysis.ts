@@ -210,6 +210,17 @@ export function flatSurfaceMask(
 }
 
 /**
+ * Marks (1) the cells of mapped lakes in a flat-surface mask. Flatness alone misses lakes whose
+ * surface the terrain model did not level, and mapped outlines miss unmapped ponds; together
+ * they catch both. Cells not in a lake keep their value (0, 1 or NaN).
+ */
+export function withLakes(flat: Float32Array, lakes: Uint8Array): Float32Array {
+  const out = Float32Array.from(flat);
+  for (let i = 0; i < out.length; i++) if (lakes[i]) out[i] = 1;
+  return out;
+}
+
+/**
  * Grows the marked (1) cells of a mask by `radius` cells in every direction (square window), so
  * the shore of a lake is ruled out along with the lake itself. Other cells keep their value.
  */

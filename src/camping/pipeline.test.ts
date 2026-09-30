@@ -46,6 +46,19 @@ const OSM_ANSWER = {
       tags: { highway: 'path' },
       geometry: [ll(2722300, 1204700), ll(2722500, 1204700)],
     },
+    // A mapped pond on the sloping meadow (E 2722380-2722420, N 1204700-1204720): not flat in
+    // the terrain, so only its outline marks it.
+    {
+      type: 'way',
+      tags: { natural: 'water' },
+      geometry: [
+        ll(2722380, 1204700),
+        ll(2722420, 1204700),
+        ll(2722420, 1204720),
+        ll(2722380, 1204720),
+        ll(2722380, 1204700),
+      ],
+    },
     // A fountain at E 2722500, N 1204500.
     { type: 'node', ...ll(2722500, 1204500), tags: { amenity: 'drinking_water', name: 'Brunnen' } },
   ],
@@ -131,6 +144,13 @@ describe('runAnalysis', () => {
     expect(progress.some((p) => p.stage === 'features')).toBe(true);
     expect(result.canopy).toBeUndefined();
     expect(result.warnings).toEqual([]);
+  });
+
+  it('rules out a mapped pond the terrain does not show as flat, with its shore', () => {
+    expect(result.water[cell(100, 45)]).toBe(1); // inside the outline (rows 40-49)
+    expect(result.water[cell(100, 51)]).toBe(1); // the 4 m shore buffer
+    expect(result.water[cell(100, 54)]).toBe(0);
+    expect(result.water[cell(80, 45)]).toBe(0);
   });
 
   it('finds the lake, the meadow and the flank', () => {

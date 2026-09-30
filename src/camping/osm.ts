@@ -21,6 +21,8 @@ export interface OsmFeatures {
   trails: LatLon[][];
   /** Streams, rivers, canals and lake outlines as polylines. */
   water: LatLon[][];
+  /** Lakes, ponds and river areas as polygons (rings; holes are rings too, filled even-odd). */
+  lakes: LatLon[][][];
   /** Places to fill a bottle. */
   drinking: DrinkingSource[];
 }
@@ -57,7 +59,7 @@ interface OverpassElement {
   lon?: number;
   tags?: Record<string, string>;
   geometry?: LatLon[];
-  members?: { geometry?: LatLon[] }[];
+  members?: { role?: string; geometry?: LatLon[] }[];
 }
 
 const TRAIL_TYPES = new Set(['path', 'footway', 'track', 'bridleway', 'steps']);
@@ -81,9 +83,50 @@ function points(e: OverpassElement): LatLon[] {
   return (e.members ?? []).flatMap((m) => m.geometry ?? []);
 }
 
-/** Splits an Overpass answer into trails, water lines and drinking-water sources. */
+const samePoint = (a: LatLon, b: LatLon) => a.lat === b.lat && a.lon === b.lon;
+const isClosed = (line: readonly LatLon[]) =>
+  line.length >= 4 && samePoint(line[0]!, line[line.length - 1]!);
+
+/**
+ * Joins the member ways of a multipolygon into closed rings. OSM splits long outlines into
+ * several ways that share their end nodes; pieces that never close (cut off by the query or
+ * broken in OSM) are dropped.
+ */
+export function stitchRings(parts: readonly (readonly LatLon[])[]): LatLon[][] {
+  const rings: LatLon[][] = [];
+  const open: LatLon[][] = [];
+  for (const p of parts) {
+    if (isClosed(p)) rings.push([...p]);
+    else if (p.length >= 2) open.push([...p]);
+  }
+  while (open.length > 0) {
+    let ring = open.pop()!;
+    let grown = true;
+    while (!isClosed(ring) && grown) {
+      grown = false;
+      const end = ring[ring.length - 1]!;
+      for (let k = 0; k < open.length; k++) {
+        const p = open[k]!;
+        const next = samePoint(p[0]!, end)
+          ? p
+          : samePoint(p[p.length - 1]!, end)
+            ? [...p].reverse()
+            : null;
+        if (!next) continue;
+        ring = [...ring, ...next.slice(1)];
+        open.splice(k, 1);
+        grown = true;
+        break;
+      }
+    }
+    if (isClosed(ring)) rings.push(ring);
+  }
+  return rings;
+}
+
+/** Splits an Overpass answer into trails, water lines, lakes and drinking-water sources. */
 export function parseFeatures(json: { elements?: OverpassElement[] }): OsmFeatures {
-  const out: OsmFeatures = { trails: [], water: [], drinking: [] };
+  const out: OsmFeatures = { trails: [], water: [], lakes: [], drinking: [] };
   for (const e of json.elements ?? []) {
     const t = e.tags ?? {};
     const kind = drinkingKind(t);
@@ -101,8 +144,12 @@ export function parseFeatures(json: { elements?: OverpassElement[] }): OsmFeatur
       (t.natural === 'water' || WATERWAY_TYPES.has(t.waterway ?? ''))
     ) {
       out.water.push(e.geometry);
+      if (t.natural === 'water' && isClosed(e.geometry)) out.lakes.push([e.geometry]);
     } else if (e.type === 'relation' && t.natural === 'water') {
-      for (const m of e.members ?? []) if (m.geometry) out.water.push(m.geometry);
+      const parts = (e.members ?? []).flatMap((m) => (m.geometry ? [m.geometry] : []));
+      out.water.push(...parts);
+      const rings = stitchRings(parts);
+      if (rings.length > 0) out.lakes.push(rings);
     }
   }
   return out;
@@ -119,8 +166,9 @@ export function roundedBox(b: BBox): BBox {
   };
 }
 
+// "osm2": answers cached before lakes were parsed lack them, so they are not reused.
 const cacheKey = (b: BBox) =>
-  `osm:${b.south.toFixed(3)},${b.west.toFixed(3)},${b.north.toFixed(3)},${b.east.toFixed(3)}`;
+  `osm2:${b.south.toFixed(3)},${b.west.toFixed(3)},${b.north.toFixed(3)},${b.east.toFixed(3)}`;
 
 const inflight = new Map<string, Promise<OsmFeatures>>();
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   vegetationHeight,
+  withLakes,
   patchMinimum,
   pitchSuitability,
   roughness,
@@ -179,5 +180,13 @@ describe('patchMinimum', () => {
     const kept = patchMinimum(g, w, w, 1);
     expect(kept[0]).toBe(0);
     expect(kept[1 * w + 1]).toBe(0); // next to the NaN
+  });
+});
+
+describe('withLakes', () => {
+  it('marks mapped lakes and keeps the flat-surface marks and gaps', () => {
+    const flat = Float32Array.of(0, 1, Number.NaN, 0);
+    const out = withLakes(flat, Uint8Array.of(1, 0, 1, 0));
+    expect(Array.from(out)).toEqual([1, 1, 1, 0]);
   });
 });

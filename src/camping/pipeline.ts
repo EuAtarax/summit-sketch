@@ -1,11 +1,25 @@
 import { createIdbCache, type Cache } from '../cache/idbCache';
 import type { BBox } from '../geo/bbox';
-import { dilateMask, flatSurfaceMask, vegetationHeight, roughness, slopeDegrees } from './analysis';
+import {
+  dilateMask,
+  flatSurfaceMask,
+  roughness,
+  slopeDegrees,
+  vegetationHeight,
+  withLakes,
+} from './analysis';
 import type { FetchFn } from '../net/fetch';
 import { wgs84ToLv95 } from './lv95';
 import { fetchFeatures, type DrinkingSource, type LatLon, type OsmFeatures } from './osm';
 import { fetchProtectedAreas, protectionIndex, type ProtectedArea } from './protection';
-import { distanceMap, rasterizeLines, rasterizePoints, type Point, type Polygon } from './raster';
+import {
+  distanceMap,
+  fillPolygon,
+  rasterizeLines,
+  rasterizePoints,
+  type Point,
+  type Polygon,
+} from './raster';
 import {
   DSM_05M,
   DTM_2M,
@@ -107,6 +121,20 @@ const toLv95 = (p: LatLon): Point => {
   return [q.e, q.n];
 };
 
+/** 1 on cells inside a mapped lake, pond or river area. */
+function lakeMask(f: OsmFeatures, g: GridGeometry): Uint8Array {
+  const mask = new Uint8Array(g.width * g.height);
+  // `?? []`: answers cached by an older version have no lakes.
+  for (const lake of f.lakes ?? [])
+    fillPolygon(
+      mask,
+      lake.map((ring) => ring.map(toLv95)),
+      g,
+      1,
+    );
+  return mask;
+}
+
 /**
  * Distance rasters (meters) to trails, water and drinking water from OSM features. Features in
  * the fetch margin around the window count too, so cells along the edge see a trail just
@@ -174,12 +202,8 @@ export async function runAnalysis(
   onProgress({ stage: 'analysis', done: 0, total: 1 });
   const slope = slopeDegrees(dtm.data, width, height, cell);
   const rough = roughness(dtm.data, width, height, cell);
-  const water = dilateMask(
-    flatSurfaceMask(dtm.data, width, height),
-    width,
-    height,
-    SHORE_BUFFER_CELLS,
-  );
+  // Lakes: flat surfaces now, mapped outlines once OpenStreetMap answers (below).
+  const flat = flatSurfaceMask(dtm.data, width, height);
 
   let canopy: Float32Array | undefined;
   if (params.canopy) {
@@ -202,6 +226,14 @@ export async function runAnalysis(
   const [osmResult, protectionResult] = await Promise.allSettled([osm, protection]);
   const warnings: string[] = [];
   const geometry: GridGeometry = { e0: dtm.e0, n0: dtm.n0, cell, width, height };
+
+  const lakes = osmResult.status === 'fulfilled' ? lakeMask(osmResult.value, geometry) : null;
+  const water = dilateMask(
+    lakes ? withLakes(flat, lakes) : flat,
+    width,
+    height,
+    SHORE_BUFFER_CELLS,
+  );
 
   const result: AnalysisResult = {
     geometry,

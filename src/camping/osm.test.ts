@@ -7,6 +7,8 @@ import {
   fetchFeatures,
   parseFeatures,
   roundedBox,
+  stitchRings,
+  type LatLon,
   type OsmFeatures,
 } from './osm';
 
@@ -85,7 +87,49 @@ describe('parseFeatures', () => {
   });
 
   it('copes with an empty answer', () => {
-    expect(parseFeatures({})).toEqual({ trails: [], water: [], drinking: [] });
+    expect(parseFeatures({})).toEqual({ trails: [], water: [], lakes: [], drinking: [] });
+  });
+
+  it('turns closed water ways and multipolygon relations into lake polygons', () => {
+    const sq = (x: number): LatLon[] => [
+      { lat: 0, lon: x },
+      { lat: 0, lon: x + 1 },
+      { lat: 1, lon: x + 1 },
+      { lat: 1, lon: x },
+      { lat: 0, lon: x },
+    ];
+    const f = parseFeatures({
+      elements: [
+        { type: 'way', tags: { natural: 'water' }, geometry: sq(0) },
+        { type: 'way', tags: { waterway: 'stream' }, geometry: sq(5) }, // a line, not a lake
+        {
+          type: 'relation',
+          tags: { natural: 'water' },
+          members: [
+            { role: 'outer', geometry: sq(10).slice(0, 3) }, // split in two ways
+            { role: 'outer', geometry: sq(10).slice(2) },
+          ],
+        },
+      ],
+    });
+    expect(f.lakes).toHaveLength(2);
+    expect(f.lakes[1]![0]).toHaveLength(5); // stitched and closed
+    expect(f.water).toHaveLength(4); // outlines still count as water lines
+  });
+});
+
+describe('stitchRings', () => {
+  const p = (lat: number, lon: number): LatLon => ({ lat, lon });
+  it('joins pieces in either direction and drops pieces that never close', () => {
+    const rings = stitchRings([
+      [p(0, 0), p(0, 1)],
+      [p(1, 1), p(0, 1)], // reversed
+      [p(1, 1), p(1, 0), p(0, 0)],
+      [p(5, 5), p(6, 6)], // dangling
+    ]);
+    expect(rings).toHaveLength(1);
+    expect(rings[0]![0]).toEqual(rings[0]![rings[0]!.length - 1]);
+    expect(rings[0]).toHaveLength(5);
   });
 });
 
