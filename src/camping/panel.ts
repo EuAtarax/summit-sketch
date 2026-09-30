@@ -11,6 +11,7 @@ import {
   DEFAULT_SETTINGS,
   MAX_CANOPY_AREA_KM,
   NEARBY_CONTROLS,
+  sanitizeSuitability,
   SUITABILITY_CONTROLS,
   type AreaKm,
   type CampingSettings,
@@ -63,8 +64,9 @@ function pitchSection(
   let params = initial;
   const sliders = new Map<keyof SuitabilityParams, ReturnType<typeof sliderRow>>();
   const rows = SUITABILITY_CONTROLS.map((c) => {
+    // Sanitizing also derives the values that follow from a slider (the slope limit).
     const row = sliderRow({ ...c, value: initial[c.key] }, (value) =>
-      onChange((params = { ...params, [c.key]: value })),
+      onChange((params = sanitizeSuitability({ ...params, [c.key]: value }))),
     );
     sliders.set(c.key, row);
     return row.node;

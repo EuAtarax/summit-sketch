@@ -9,8 +9,8 @@ Read `docs/PLAN.md` (phases and acceptance criteria) and `docs/STYLES.md` (style
 
 ## Hard constraints
 
-- **Free to run.** The app is static hosting only: no backend, no API keys, and no services that need a billing account. Do not use Google Maps, Google 3D Tiles, Mapbox, or anything with paid tiers.
-- **All computation happens client-side**, in the user's browser.
+- **Free or very cheap to run.** The app itself is static (GitHub Pages). Small hosted pieces are fine when they unlock data or features: a proxy (e.g. to add CORS to an open data server), a database, an offline precompute job, preferably on free tiers and at most a few euros a month. API keys are fine when they are free or very cheap; a key that must stay secret lives in the hosted piece, never in the client bundle. Do not use Google Maps, Google 3D Tiles, Mapbox, or anything with usage-priced tiers that could run up a bill.
+- **The analysis runs client-side**, in the user's browser. Offline precomputation (e.g. prediction rasters) is fine when the result is served as static files.
 - **Mobile-first.** The app must stay responsive on a mid-range phone. Heavy work runs in Web Workers, and the main thread never blocks for more than ~50 ms.
 - **Worldwide coverage for the panorama.** Never hardcode anything to the Alps there. The camping finder is Switzerland-only on purpose (it needs swisstopo's 2 m terrain and BAFU data); keep its data providers behind interfaces so other countries can follow.
 - **Respect data providers.** Follow their usage policies, cache aggressively, and show attribution in the app and on every exported image.
