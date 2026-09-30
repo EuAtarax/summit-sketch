@@ -1,4 +1,4 @@
-# summit-sketch-proxy
+# camp-spots (proxy)
 
 A Cloudflare Worker that lets the camping finder read Austria's open 1 m elevation data (BEV ALS DTM and DSM, CC BY 4.0) from the browser. `data.bev.gv.at` answers range requests but sends no CORS header; this worker forwards the ranges and adds the header, for the app's own origins only (`ALLOWED_ORIGINS` in `wrangler.toml`). Only `ALS/DTM/...` and `ALS/DSM/...` GeoTIFFs are forwarded, one closed range of at most 4 MiB per request.
 
@@ -8,10 +8,10 @@ From this folder, with a (free) Cloudflare account:
 
 ```
 npx wrangler@4 login     # opens the browser once to connect wrangler to the account
-npx wrangler@4 deploy    # prints the URL, e.g. https://summit-sketch-proxy.<account>.workers.dev
+npx wrangler@4 deploy    # prints the URL: https://camp-spots.shitlas-trash.workers.dev
 ```
 
-Check it: `curl -H "Origin: https://euatarax.github.io" -H "Range: bytes=0-15" https://summit-sketch-proxy.<account>.workers.dev/bev/ALS/DTM/20240915/ALS_DTM_CRS3035RES50000mN2600000E4400000.tif -i` should answer `206` with `Access-Control-Allow-Origin`.
+Check it: `curl -H "Origin: https://euatarax.github.io" -H "Range: bytes=0-15" https://camp-spots.shitlas-trash.workers.dev/bev/ALS/DTM/20240915/ALS_DTM_CRS3035RES50000mN2600000E4400000.tif -i` should answer `206` with `Access-Control-Allow-Origin`.
 
 ## Optional: R2 block cache
 
