@@ -33,6 +33,47 @@ export function section(title: string, open: boolean, ...children: Node[]): HTML
   return el('details', { open }, el('summary', { textContent: title }), ...children);
 }
 
+/** A titled block of related controls (a plain heading, not collapsible). */
+export function group(title: string, ...children: Node[]): HTMLElement {
+  return el('section', { className: 'group' }, el('h2', { textContent: title }), ...children);
+}
+
+export interface TabItem {
+  label: string;
+  content: HTMLElement;
+}
+
+/** A tab strip with one visible panel at a time; arrow keys move between the tabs. */
+export function tabs(items: readonly TabItem[]): HTMLElement {
+  const buttons = items.map((item, i) => {
+    const button = el('button', { type: 'button', className: 'tab', textContent: item.label });
+    button.setAttribute('role', 'tab');
+    button.id = `tab-${i}`;
+    item.content.setAttribute('role', 'tabpanel');
+    item.content.setAttribute('aria-labelledby', button.id);
+    return button;
+  });
+  const select = (index: number, focus = false) => {
+    buttons.forEach((button, i) => {
+      button.setAttribute('aria-selected', String(i === index));
+      button.tabIndex = i === index ? 0 : -1;
+      items[i]!.content.hidden = i !== index;
+    });
+    if (focus) buttons[index]!.focus();
+  };
+  buttons.forEach((button, i) => {
+    button.onclick = () => select(i);
+    button.onkeydown = (e) => {
+      const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (step) select((i + step + items.length) % items.length, true);
+    };
+  });
+  select(0);
+  const strip = el('div', { className: 'tabs' }, ...buttons);
+  strip.setAttribute('role', 'tablist');
+  return el('div', { className: 'tabbed' }, strip, ...items.map((i) => i.content));
+}
+
 /** A checkbox with a label and an optional explanation. */
 export function checkRow(
   label: string,

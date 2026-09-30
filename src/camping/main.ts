@@ -50,7 +50,9 @@ const topBar = document.createElement('div');
 topBar.className = 'map-top';
 app.append(mapEl, topBar);
 
-const { map, showBase, showOverlays } = createBaseMap(mapEl);
+const { map, showBase, showOverlays } = createBaseMap(mapEl, settings.base, (base) =>
+  update({ base }),
+);
 
 function update(patch: Partial<CampingSettings>): void {
   settings = withPatch(settings, patch);
@@ -65,7 +67,6 @@ const panel = createPanel(app, settings, {
   },
   onViewChange(patch) {
     update(patch);
-    if (patch.base) showBase(settings.base);
     if (patch.overlays) showOverlays(settings.overlays);
     if (patch.opacity !== undefined) overlay?.setOpacity(settings.opacity);
     if (patch.showDrinking !== undefined) showDrinkingSources();
@@ -77,6 +78,7 @@ const panel = createPanel(app, settings, {
   },
   onSpotSelect: focusSpot,
   onLocate: locate,
+  onOpenChange: (panelOpen) => update({ panelOpen }),
 });
 panel.syncFrom(settings);
 showBase(settings.base);
@@ -178,7 +180,10 @@ function onResult(res: AnalysisResult): void {
   showDrinkingSources();
   rescore();
   drawOutline(true);
-  if (window.matchMedia('(max-width: 640px)').matches) panel.setOpen(false);
+  if (window.matchMedia('(max-width: 640px)').matches) {
+    panel.setOpen(false);
+    update({ panelOpen: false });
+  }
 }
 
 // --- scoring, layers, markers ------------------------------------------------------------

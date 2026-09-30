@@ -38,6 +38,8 @@ export interface CampingSettings {
   hideProtected: boolean;
   /** Show drinking-water sources as markers on the map. */
   showDrinking: boolean;
+  /** Whether the options panel is open; closed by default so the map has the room. */
+  panelOpen: boolean;
 }
 
 export const DEFAULT_SETTINGS: CampingSettings = {
@@ -52,6 +54,7 @@ export const DEFAULT_SETTINGS: CampingSettings = {
   nearby: DEFAULT_NEARBY,
   hideProtected: true,
   showDrinking: true,
+  panelOpen: false,
 };
 
 /** What each pitch tunable is, its range and a short explanation (shown in the panel). */
@@ -214,6 +217,7 @@ export function sanitizeSettings(raw: unknown): CampingSettings {
       typeof r.hideProtected === 'boolean' ? r.hideProtected : DEFAULT_SETTINGS.hideProtected,
     showDrinking:
       typeof r.showDrinking === 'boolean' ? r.showDrinking : DEFAULT_SETTINGS.showDrinking,
+    panelOpen: r.panelOpen === true,
   };
 }
 
