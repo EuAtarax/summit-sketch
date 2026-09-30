@@ -1,23 +1,16 @@
 import type { GridGeometry } from './terrain';
 
-/** Each preference has an on/off switch and the distance up to which a cell counts as near. */
-export interface NearbyPreference {
-  enabled: boolean;
-  /** Meters. */
-  maxM: number;
-}
-
+/**
+ * One signed distance per feature, in meters: positive prefers ground within that distance,
+ * negative prefers ground at least that far away, and 0 ignores the feature.
+ */
 export interface NearbyParams {
-  trail: NearbyPreference;
-  water: NearbyPreference;
-  drinking: NearbyPreference;
+  trail: number;
+  water: number;
+  drinking: number;
 }
 
-export const DEFAULT_NEARBY: NearbyParams = {
-  trail: { enabled: true, maxM: 300 },
-  water: { enabled: true, maxM: 400 },
-  drinking: { enabled: true, maxM: 800 },
-};
+export const DEFAULT_NEARBY: NearbyParams = { trail: 300, water: 400, drinking: 800 };
 
 /**
  * How much being far away hurts. A trail matters most (a floor of 0.15 means a cell far from any
@@ -36,6 +29,22 @@ export function nearnessFactor(distanceM: number, maxM: number, floor: number): 
   if (!(distanceM > maxM)) return 1;
   if (distanceM === Infinity) return floor;
   return floor + (1 - floor) * Math.max(0, 1 - (distanceM - maxM) / maxM);
+}
+
+/**
+ * The mirror of nearnessFactor: the floor at the feature itself, rising linearly to 1 at `minM`.
+ * Infinity (no such feature in the area) is as far away as it gets, so it is fully fine.
+ */
+export function distanceFactor(distanceM: number, minM: number, floor: number): number {
+  if (!(distanceM < minM)) return 1;
+  return floor + (1 - floor) * (distanceM / minM);
+}
+
+/** The factor for a signed preference (see NearbyParams). */
+function preferenceFactor(distanceM: number, signedM: number, floor: number): number {
+  return signedM > 0
+    ? nearnessFactor(distanceM, signedM, floor)
+    : distanceFactor(distanceM, -signedM, floor);
 }
 
 export interface ScoreInputs {
@@ -66,18 +75,16 @@ export function campScore(
       out[i] = score;
       continue;
     }
-    if (nearby.trail.enabled && trailDistance) {
+    if (nearby.trail !== 0 && trailDistance) {
       const d = trailDistance[i]!;
       score *=
-        d < TRAIL_CLEARANCE_M
-          ? ON_TRAIL_FACTOR
-          : nearnessFactor(d, nearby.trail.maxM, FLOORS.trail);
+        d < TRAIL_CLEARANCE_M ? ON_TRAIL_FACTOR : preferenceFactor(d, nearby.trail, FLOORS.trail);
     }
-    if (nearby.water.enabled && waterDistance) {
-      score *= nearnessFactor(waterDistance[i]!, nearby.water.maxM, FLOORS.water);
+    if (nearby.water !== 0 && waterDistance) {
+      score *= preferenceFactor(waterDistance[i]!, nearby.water, FLOORS.water);
     }
-    if (nearby.drinking.enabled && drinkingDistance) {
-      score *= nearnessFactor(drinkingDistance[i]!, nearby.drinking.maxM, FLOORS.drinking);
+    if (nearby.drinking !== 0 && drinkingDistance) {
+      score *= preferenceFactor(drinkingDistance[i]!, nearby.drinking, FLOORS.drinking);
     }
     if (hideProtected && protection) {
       const area = protection.index[i]!;

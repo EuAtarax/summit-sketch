@@ -28,7 +28,8 @@ body,
 /* Top row: search on the left, room for the Options button on the right. */
 .map-top {
   position: absolute;
-  z-index: 1000;
+  z-index: 1002; /* above the options panel, so search suggestions are never hidden by it */
+  flex-wrap: wrap;
   top: max(12px, env(safe-area-inset-top));
   left: 12px;
   right: 12px;
@@ -227,19 +228,6 @@ body,
   font-size: 0.875rem;
 }
 
-.chip-main {
-  display: grid;
-  gap: 6px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-weight: 700;
-  text-align: left;
-  cursor: pointer;
-}
-
 .chip-spots {
   display: flex;
   flex-wrap: wrap;
@@ -393,6 +381,111 @@ body,
   .map-top .search {
     flex: 1;
   }
+}
+
+/* A short message next to the search field (under it on phones) that fades out by itself. */
+.toast {
+  align-self: center;
+  max-width: 360px;
+  padding: 8px 12px;
+  border-left: 4px solid #d98a00;
+  border-radius: 8px;
+  background: rgb(244 246 247 / 0.97);
+  box-shadow: 0 1px 6px rgb(31 42 51 / 0.3);
+  font-size: 0.875rem;
+  line-height: 1.3;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.toast.visible {
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .toast {
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transition: none;
+  }
+}
+
+/* Progress along the top edge of the map while an analysis runs. */
+.progress {
+  position: absolute;
+  z-index: 1003;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+
+.progress.active {
+  opacity: 1;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--trail-red);
+  transition: width 0.3s ease-out;
+}
+
+.progress.indeterminate .progress-fill {
+  width: 30%;
+  animation: progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill {
+    transition: none;
+  }
+  .progress.indeterminate .progress-fill {
+    width: 100%;
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+.status:empty {
+  display: none;
+}
+
+.view-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.view-controls select {
+  min-height: 44px;
+  font: inherit;
+}
+
+.opacity {
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  accent-color: var(--ink);
 }
 
 @media (max-width: 640px) {

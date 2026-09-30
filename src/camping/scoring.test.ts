@@ -3,6 +3,7 @@ import {
   campScore,
   DEFAULT_NEARBY,
   FLOORS,
+  distanceFactor,
   nearnessFactor,
   pickSpots,
   TRAIL_CLEARANCE_M,
@@ -20,6 +21,15 @@ describe('nearnessFactor', () => {
 
   it('gives the floor when there is no such feature at all', () => {
     expect(nearnessFactor(Infinity, 300, 0.4)).toBe(0.4);
+  });
+});
+
+describe('distanceFactor', () => {
+  it('rises from the floor at the feature to 1 at the minimum distance', () => {
+    expect(distanceFactor(0, 300, 0.2)).toBeCloseTo(0.2, 6);
+    expect(distanceFactor(150, 300, 0.2)).toBeCloseTo(0.6, 6);
+    expect(distanceFactor(300, 300, 0.2)).toBe(1);
+    expect(distanceFactor(Infinity, 300, 0.2)).toBe(1);
   });
 });
 
@@ -57,8 +67,17 @@ describe('campScore', () => {
   });
 
   it('ignores a preference that is switched off', () => {
-    const off: NearbyParams = { ...DEFAULT_NEARBY, trail: { enabled: false, maxM: 300 } };
+    const off: NearbyParams = { ...DEFAULT_NEARBY, trail: 0 };
     expect(one({ trailDistance: Float32Array.of(5000) }, off)).toBe(1);
+  });
+
+  it('prefers ground away from water when the water slider is negative', () => {
+    const away: NearbyParams = { ...DEFAULT_NEARBY, water: -300 };
+    const at = (d: number) => one({ waterDistance: Float32Array.of(d) }, away);
+    expect(at(0)).toBeCloseTo(FLOORS.water, 6);
+    expect(at(150)).toBeCloseTo((FLOORS.water + 1) / 2, 6);
+    expect(at(300)).toBe(1);
+    expect(at(Infinity)).toBe(1);
   });
 
   it('keeps unsuitable and missing cells unsuitable and missing', () => {

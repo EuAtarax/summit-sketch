@@ -96,11 +96,11 @@ export interface SliderConfig {
   step: number;
   value: number;
   help: string;
-  /** The recommended value, shown after the explanation. */
-  recommended?: number;
+  /** How the value is printed; defaults to the number plus `unit`. */
+  format?: (value: number) => string;
 }
 
-/** A range slider with its current value, an explanation and the recommended value. */
+/** A range slider with its current value and an explanation under its title. */
 export function sliderRow(
   c: SliderConfig,
   onInput: (value: number) => void,
@@ -113,19 +113,18 @@ export function sliderRow(
     value: String(c.value),
   });
   const output = el('output');
-  const show = () => (output.textContent = `${Number(input.value)}${c.unit}`);
+  const format = c.format ?? ((v: number) => `${v}${c.unit}`);
+  const show = () => (output.textContent = format(Number(input.value)));
   show();
   input.oninput = () => {
     show();
     onInput(Number(input.value));
   };
-  const help =
-    c.recommended === undefined ? c.help : `${c.help} Recommended: ${c.recommended}${c.unit}.`;
   const node = el(
     'div',
     { className: 'slider' },
     el('div', { className: 'slider-head' }, el('span', { textContent: c.label }), output),
-    el('small', { textContent: help }),
+    el('small', { textContent: c.help }),
     input,
   );
   return {

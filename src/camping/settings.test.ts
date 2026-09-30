@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SUITABILITY } from './analysis';
+import { DEFAULT_NEARBY } from './scoring';
 import {
   AREA_SIZES_KM,
   DEFAULT_SETTINGS,
+  sanitizeNearby,
   sanitizeSettings,
   sanitizeSuitability,
   SUITABILITY_CONTROLS,
@@ -59,6 +61,25 @@ describe('sanitizeSuitability', () => {
   it('keeps the fade well-formed: the steepest slope stays above the comfortable one', () => {
     const p = sanitizeSuitability({ slopeOkDeg: 12, slopeMaxDeg: 5 });
     expect(p.slopeMaxDeg).toBeGreaterThan(p.slopeOkDeg);
+  });
+});
+
+describe('sanitizeNearby', () => {
+  it('keeps signed distances in range and defaults the rest', () => {
+    expect(sanitizeNearby({ trail: -300, water: 99_999, drinking: 'x' })).toEqual({
+      trail: -300,
+      water: 1500,
+      drinking: DEFAULT_NEARBY.drinking,
+    });
+    expect(sanitizeNearby({ drinking: -50 }).drinking).toBe(0);
+  });
+
+  it('migrates the old switch-and-distance shape', () => {
+    const old = {
+      trail: { enabled: false, maxM: 300 },
+      water: { enabled: true, maxM: 600 },
+    };
+    expect(sanitizeNearby(old)).toMatchObject({ trail: 0, water: 600 });
   });
 });
 

@@ -5,7 +5,6 @@ import {
   patchMinimum,
   pitchSuitability,
   roughness,
-  shareAbove,
   slopeDegrees,
 } from './analysis';
 
@@ -157,12 +156,5 @@ describe('patchMinimum', () => {
     const kept = patchMinimum(g, w, w, 1);
     expect(kept[0]).toBe(0);
     expect(kept[1 * w + 1]).toBe(0); // next to the NaN
-  });
-});
-
-describe('shareAbove', () => {
-  it('counts only cells with data', () => {
-    expect(shareAbove(Float32Array.from([0.9, 0.1, Number.NaN, 0.6]), 0.5)).toBeCloseTo(2 / 3, 6);
-    expect(shareAbove(Float32Array.from([Number.NaN]), 0.5)).toBe(0);
   });
 });

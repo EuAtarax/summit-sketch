@@ -177,6 +177,7 @@ export async function runAnalysis(
     fetchFn,
   );
   const { width, height, cell } = dtm;
+  const terrainDone = performance.now();
   onProgress({ stage: 'analysis', done: 0, total: 1 });
   const slope = slopeDegrees(dtm.data, width, height, cell);
   const rough = roughness(dtm.data, width, height, cell);
@@ -204,6 +205,7 @@ export async function runAnalysis(
     canopy = objectHeight(coarse.data, dtm.data);
   }
 
+  const analysisDone = performance.now();
   onProgress({ stage: 'features', done: 0, total: 1 });
   const [osmResult, protectionResult] = await Promise.allSettled([osm, protection]);
   const warnings: string[] = [];
@@ -235,5 +237,10 @@ export async function runAnalysis(
     warnings.push(PROTECTION_UNAVAILABLE);
   }
   result.millis = performance.now() - started;
+  const ms = (from: number, to: number) => `${Math.round(to - from)} ms`;
+  console.debug(
+    `[camping] terrain ${ms(started, terrainDone)}, analysis ${ms(terrainDone, analysisDone)}, ` +
+      `waiting for OSM and protection data ${ms(analysisDone, performance.now())}`,
+  );
   return result;
 }

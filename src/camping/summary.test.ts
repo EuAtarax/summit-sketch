@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { AnalysisResult } from './pipeline';
-import { describeSpot, formatMeters, hiddenHectares, protectedLayer, summarize } from './summary';
+import {
+  describeSpot,
+  formatMeters,
+  formatSignedMeters,
+  protectedLayer,
+  protectionAt,
+  restrictionNotice,
+} from './summary';
 
 /** A 10 x 10 cell result (2 m cells) with a protection on the right half. */
 function result(overrides: Partial<AnalysisResult> = {}): AnalysisResult {
@@ -49,6 +56,14 @@ describe('formatMeters', () => {
   ])('formats %d m', (d, expected) => expect(formatMeters(d)).toBe(expected));
 });
 
+describe('formatSignedMeters', () => {
+  it.each([
+    [300, '+300 m'],
+    [-1500, '-1500 m'],
+    [0, 'Off'],
+  ])('prints %d', (v, expected) => expect(formatSignedMeters(v)).toBe(expected));
+});
+
 describe('describeSpot', () => {
   const spot = (col: number) => ({ rank: 2, col, row: 3, e: 0, n: 0, score: 0.864 });
 
@@ -88,33 +103,18 @@ describe('protectedLayer', () => {
   });
 });
 
-describe('hiddenHectares and summarize', () => {
-  const inForceAreas = [
-    { layer: 'x', kind: 'Game reserve', name: 'A', rule: null, period: null, inForce: true },
-  ];
-
-  it('counts good terrain under a protection that is in force', () => {
-    const terrain = new Float32Array(100).fill(1);
-    // 50 protected cells of 4 m2 = 200 m2 = 0.02 ha.
-    expect(hiddenHectares(result({ areas: inForceAreas }), terrain)).toBeCloseTo(0.02, 6);
-    expect(hiddenHectares(result(), terrain)).toBe(0); // out of season: nothing hidden
-    expect(hiddenHectares(result({ areas: inForceAreas }), new Float32Array(100))).toBe(0);
+describe('protectionAt and restrictionNotice', () => {
+  it('finds the area under a position and nothing outside it or outside the box', () => {
+    const res = result();
+    expect(protectionAt(res, 15, 10)?.name).toBe('Chnuegrat'); // right half
+    expect(protectionAt(res, 3, 10)).toBeNull(); // left half
+    expect(protectionAt(res, 500, 10)).toBeNull(); // outside the box
+    expect(protectionAt(without(res, 'protectionIndex'), 15, 10)).toBeNull();
   });
 
-  it('summarizes size, time and share, and mentions hidden ground only when it matters', () => {
-    const terrain = new Float32Array(100).fill(1);
-    const score = new Float32Array(100);
-    for (let i = 0; i < 25; i++) score[i] = 1;
-    const text = summarize(result(), terrain, score, true);
-    expect(text).toBe(
-      '0.0 x 0.0 km in 1.5 s. 25.0 % of the area (0.0 ha) has ground you could pitch on.',
-    );
-    // Make the box big enough that hidden hectares reach 0.1 ha (cell = 20 m).
-    const big = result({
-      geometry: { e0: 0, n0: 200, cell: 20, width: 10, height: 10 },
-      areas: inForceAreas,
-    });
-    expect(summarize(big, terrain, score, true)).toMatch(/hidden by protected areas/);
-    expect(summarize(big, terrain, score, false)).not.toMatch(/hidden/);
+  it('warns without ever saying camping is allowed', () => {
+    const text = restrictionNotice(result().areas[0]!);
+    expect(text).toBe('In Wildlife quiet zone: Chnuegrat (not in force today). Check local rules.');
+    expect(restrictionNotice({ ...result().areas[0]!, inForce: true })).toMatch(/in force today/);
   });
 });

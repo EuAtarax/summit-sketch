@@ -1,10 +1,6 @@
-import { shareAbove } from './analysis';
 import { formatDistance } from '../ui/format';
-import type { AnalysisResult } from './pipeline';
+import type { AnalysisResult, AreaInfo } from './pipeline';
 import type { Spot } from './scoring';
-
-/** A cell counts as pitchable from this suitability on (for the summary numbers). */
-export const PITCHABLE = 0.5;
 
 export const NO_GOOD_SPOTS =
   'No good spot in this box. Try a different place, a larger area, or loosen the pitch settings.';
@@ -19,6 +15,11 @@ export interface SpotItem {
 /** "120 m" below a kilometer (rounded to 10 m), "1.4 km" above. */
 export function formatMeters(d: number): string {
   return d < 1000 ? `${Math.round(d / 10) * 10} m` : formatDistance(d);
+}
+
+/** A signed slider value: "+300 m" (within), "-300 m" (at least that far), "Off" for 0. */
+export function formatSignedMeters(value: number): string {
+  return value === 0 ? 'Off' : `${value > 0 ? '+' : '-'}${Math.abs(value)} m`;
 }
 
 /**
@@ -65,32 +66,18 @@ export function protectedLayer(res: AnalysisResult): Float32Array | null {
   return out;
 }
 
-/** Hectares of good terrain that a protection in force takes out of the score. */
-export function hiddenHectares(res: AnalysisResult, terrain: Float32Array): number {
-  const index = res.protectionIndex;
-  if (!index) return 0;
-  let cells = 0;
-  index.forEach((area, i) => {
-    if (area > 0 && res.areas[area - 1]!.inForce && terrain[i]! >= PITCHABLE) cells++;
-  });
-  return (cells * res.geometry.cell * res.geometry.cell) / 10_000;
+/** The protected area that contains an LV95 position, or null (also when none was loaded). */
+export function protectionAt(res: AnalysisResult, e: number, n: number): AreaInfo | null {
+  const g = res.geometry;
+  const col = Math.floor((e - g.e0) / g.cell);
+  const row = Math.floor((g.n0 - n) / g.cell);
+  if (col < 0 || row < 0 || col >= g.width || row >= g.height) return null;
+  const index = res.protectionIndex?.[row * g.width + col] ?? 0;
+  return index > 0 ? res.areas[index - 1]! : null;
 }
 
-/** The status line: box size, time, how much of it is good, and what protection hid. */
-export function summarize(
-  res: AnalysisResult,
-  terrain: Float32Array,
-  score: Float32Array,
-  hideProtected: boolean,
-): string {
-  const sizeM = res.geometry.width * res.geometry.cell;
-  const km = (sizeM / 1000).toFixed(1);
-  const good = shareAbove(score, PITCHABLE);
-  const hectares = (good * sizeM * sizeM) / 10_000;
-  const hidden = hideProtected ? hiddenHectares(res, terrain) : 0;
-  return (
-    `${km} x ${km} km in ${(res.millis / 1000).toFixed(1)} s. ` +
-    `${(good * 100).toFixed(1)} % of the area (${hectares.toFixed(1)} ha) has ground you could pitch on.` +
-    (hidden >= 0.1 ? ` ${hidden.toFixed(1)} ha more is hidden by protected areas.` : '')
-  );
+/** The short warning for a chosen spot inside a protected area. Never says camping is allowed. */
+export function restrictionNotice(area: AreaInfo): string {
+  const state = area.inForce ? 'in force today' : 'not in force today';
+  return `In ${area.kind}: ${area.name} (${state}). Check local rules.`;
 }
