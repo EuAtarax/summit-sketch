@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AnalysisResult } from './pipeline';
 import {
+  areasAt,
   describeCell,
   describeSpot,
   formatMeters,
@@ -129,5 +130,33 @@ describe('protectionAt and restrictionNotice', () => {
     const res = result({ areas: [{ ...park, inForce: true }] });
     expect(describeCell(res, 7, 0)).toContain('in Nature park: Parc Ela');
     expect(describeCell(res, 7, 0)).not.toContain('not in force');
+  });
+});
+
+describe('areasAt', () => {
+  // Two areas over the whole 20 x 20 m box: a park (listed only) and a zone in force.
+  const box: [number, number][] = [
+    [0, 0],
+    [20, 0],
+    [20, 20],
+    [0, 20],
+  ];
+  const base = { layer: 'x', rule: null, period: null, inForce: true };
+  const res = result({
+    areas: [
+      { ...base, kind: 'Nature park', name: 'Park', restricts: false },
+      { ...base, kind: 'Wildlife quiet zone', name: 'Zone', restricts: true },
+    ],
+    areaShapes: [[[box]], [[box]]],
+  });
+
+  it('names every area at a point, strictest first', () => {
+    expect(areasAt(res, 5, 5).map((a) => a.name)).toEqual(['Zone', 'Park']);
+    expect(describeCell(res, 2, 2)).toContain('in Wildlife quiet zone: Zone, in Nature park: Park');
+    expect(areasAt(res, 50, 5)).toEqual([]);
+  });
+
+  it('falls back to the painted grid without outlines', () => {
+    expect(areasAt(result(), 15, 10).map((a) => a.name)).toEqual(['Chnuegrat']);
   });
 });

@@ -26,6 +26,14 @@ describe('isInForce', () => {
     expect(isInForce('01.04. - 30.06.', d('2026-09-29'))).toBe(false);
   });
 
+  it('reads every period of a text that lists several', () => {
+    const two = '01.12. - 31.03. / 01.05. - 15.07.';
+    expect(isInForce(two, d('2026-02-01'))).toBe(true);
+    expect(isInForce(two, d('2026-06-01'))).toBe(true); // only the second period covers June
+    expect(isInForce(two, d('2026-04-15'))).toBe(false);
+    expect(isInForce(two, d('2026-09-29'))).toBe(false);
+  });
+
   it('counts a missing or unreadable period as in force (flag rather than miss)', () => {
     expect(isInForce(null, d('2026-07-15'))).toBe(true);
     expect(isInForce('ganzjaehrig', d('2026-07-15'))).toBe(true);

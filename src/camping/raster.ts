@@ -184,3 +184,16 @@ export function distanceMap(
   }
   return out;
 }
+
+/** Whether a point lies inside a polygon (even-odd rule over all rings, so holes work). */
+export function pointInPolygon([e, n]: Point, polygon: Polygon): boolean {
+  let inside = false;
+  for (const ring of polygon) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [ei, ni] = ring[i]!;
+      const [ej, nj] = ring[j]!;
+      if (ni > n !== nj > n && e < ei + ((n - ni) * (ej - ei)) / (nj - ni)) inside = !inside;
+    }
+  }
+  return inside;
+}

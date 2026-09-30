@@ -12,7 +12,7 @@ import type { FetchFn } from '../net/fetch';
 import { wgs84ToLv95 } from './lv95';
 import { fetchFeatures, type DrinkingSource, type LatLon, type OsmFeatures } from './osm';
 import { fetchProtectedAreas, protectionIndex, type ProtectedArea } from './protection';
-import { distanceMap, rasterizeLines, rasterizePoints, type Point } from './raster';
+import { distanceMap, rasterizeLines, rasterizePoints, type Point, type Polygon } from './raster';
 import {
   DSM_05M,
   DTM_2M,
@@ -60,6 +60,8 @@ export interface AnalysisResult {
   /** 1-based index into `areas` for each cell (0 = not protected); absent when unavailable. */
   protectionIndex?: Uint8Array;
   areas: AreaInfo[];
+  /** Outlines of `areas` (same order), to name every area at a point. Stays in the worker. */
+  areaShapes?: Polygon[][];
   /** Plain-language notes about data that could not be loaded. */
   warnings: string[];
   millis: number;
@@ -230,6 +232,7 @@ export async function runAnalysis(
   if (protectionResult.status === 'fulfilled') {
     result.protectionIndex = protectionIndex(protectionResult.value, geometry);
     result.areas = protectionResult.value.map(areaInfo);
+    result.areaShapes = protectionResult.value.map((a) => a.polygons);
   } else {
     console.warn('Protected areas unavailable', protectionResult.reason);
     warnings.push(PROTECTION_UNAVAILABLE);

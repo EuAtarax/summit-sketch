@@ -1,6 +1,7 @@
 import { formatDistance } from '../ui/format';
 import type { AnalysisResult, AreaInfo } from './pipeline';
 import { hidesGround } from './protection';
+import { pointInPolygon } from './raster';
 import type { Spot } from './scoring';
 
 export const NO_GOOD_SPOTS =
@@ -44,14 +45,14 @@ export function describeCell(res: AnalysisResult, col: number, row: number): str
       ? `${formatMeters(distances[i]!)} from ${label}`
       : `no ${label} in this box`;
   };
-  const areaIndex = res.protectionIndex?.[i] ?? 0;
-  const area = areaIndex > 0 ? res.areas[areaIndex - 1]! : null;
+  const g = res.geometry;
+  const areas = areasAt(res, g.e0 + (col + 0.5) * g.cell, g.n0 - (row + 0.5) * g.cell);
   const parts = [
     `${Math.round(res.slope[i]!)}° slope`,
     near('a trail', res.trailDistance),
     near('water', res.waterDistance),
     near('drinking water', res.drinkingDistance),
-    area ? `in ${area.kind}: ${area.name}${notInForce(area) ? ' (not in force today)' : ''}` : null,
+    ...areas.map((a) => `in ${a.kind}: ${a.name}${notInForce(a) ? ' (not in force today)' : ''}`),
   ];
   return parts.filter(Boolean).join(', ');
 }
@@ -73,14 +74,29 @@ export function protectedLayer(res: AnalysisResult): Float32Array | null {
   return out;
 }
 
-/** The protected area that contains an LV95 position, or null (also when none was loaded). */
+/** The strictest protected area that contains an LV95 position, or null (also when none was loaded). */
 export function protectionAt(res: AnalysisResult, e: number, n: number): AreaInfo | null {
+  return areasAt(res, e, n)[0] ?? null;
+}
+
+/**
+ * Every protected area that contains an LV95 position, strictest first (a restriction in
+ * force, then one out of season, then areas listed for information). Uses the outlines when
+ * the worker still has them, else the painted grid, which holds only the strictest area.
+ */
+export function areasAt(res: AnalysisResult, e: number, n: number): AreaInfo[] {
   const g = res.geometry;
   const col = Math.floor((e - g.e0) / g.cell);
   const row = Math.floor((g.n0 - n) / g.cell);
-  if (col < 0 || row < 0 || col >= g.width || row >= g.height) return null;
+  if (col < 0 || row < 0 || col >= g.width || row >= g.height) return [];
+  if (res.areaShapes) {
+    // `areas` is sorted weakest first (see parseProtectedAreas), so reverse for strictest first.
+    return res.areas
+      .filter((_, k) => res.areaShapes![k]!.some((p) => pointInPolygon([e, n], p)))
+      .reverse();
+  }
   const index = res.protectionIndex?.[row * g.width + col] ?? 0;
-  return index > 0 ? res.areas[index - 1]! : null;
+  return index > 0 ? [res.areas[index - 1]!] : [];
 }
 
 /** The short warning for a chosen spot inside a protected area. Never says camping is allowed. */
