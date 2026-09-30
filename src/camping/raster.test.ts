@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  distanceMap,
   distanceTransform,
   fillPolygon,
   rasterizeLines,
@@ -83,6 +84,33 @@ describe('distanceTransform', () => {
   it('is Infinity when nothing is marked', () => {
     const d = distanceTransform(new Uint8Array(G.width * G.height), G.width, G.height, G.cell);
     expect(d[at(5, 5)]).toBe(Infinity);
+  });
+});
+
+describe('distanceMap', () => {
+  // A north-south trail 10 m east of the grid's east edge (E 1040).
+  const trail: Point[][] = [
+    [
+      [1050, 2100],
+      [1050, 1900],
+    ],
+  ];
+  const mark = (grid: typeof G) => rasterizeLines(trail, grid);
+
+  it('sees a feature in the margin outside the window', () => {
+    const d = distanceMap(mark, G, 10); // a 20 m margin
+    // Easternmost cell center E 1039 to the trail's cell (center E 1051): 12 m.
+    expect(d[at(19, 10)]).toBeCloseTo(12, 5);
+    expect(d[at(0, 10)]).toBeCloseTo(50, 5);
+    expect(d).toHaveLength(G.width * G.height);
+  });
+
+  it('matches the plain transform when the margin is 0 (the feature is then unseen)', () => {
+    expect(distanceMap(mark, G, 0)[at(19, 10)]).toBe(Infinity);
+    const inside: Point[][] = [[center(5, 0), center(5, 19)]];
+    const plain = distanceTransform(rasterizeLines(inside, G), G.width, G.height, G.cell);
+    const padded = distanceMap((grid) => rasterizeLines(inside, grid), G, 4);
+    expect(Array.from(padded)).toEqual(Array.from(plain));
   });
 });
 

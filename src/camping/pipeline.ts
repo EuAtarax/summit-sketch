@@ -12,7 +12,7 @@ import type { FetchFn } from './cog';
 import { wgs84ToLv95 } from './lv95';
 import { fetchFeatures, type DrinkingSource, type LatLon, type OsmFeatures } from './osm';
 import { fetchProtectedAreas, protectionIndex, type ProtectedArea } from './protection';
-import { distanceTransform, rasterizeLines, rasterizePoints, type Point } from './raster';
+import { distanceMap, rasterizeLines, rasterizePoints, type Point } from './raster';
 import {
   DSM_05M,
   DTM_2M,
@@ -112,23 +112,20 @@ const toLv95 = (p: LatLon): Point => {
   return [q.e, q.n];
 };
 
-/** Distance rasters (meters) to trails, water and drinking water from OSM features. */
+/**
+ * Distance rasters (meters) to trails, water and drinking water from OSM features. Features in
+ * the fetch margin around the window count too, so cells along the edge see a trail just
+ * outside it.
+ */
 function featureDistances(f: OsmFeatures, g: GridGeometry) {
-  const distance = (mask: Uint8Array) => distanceTransform(mask, g.width, g.height, g.cell);
+  const pad = Math.ceil(BOX_MARGIN_M / g.cell);
+  const trails = f.trails.map((l) => l.map(toLv95));
+  const water = f.water.map((l) => l.map(toLv95));
+  const drinking = f.drinking.map(toLv95);
   return {
-    trailDistance: distance(
-      rasterizeLines(
-        f.trails.map((l) => l.map(toLv95)),
-        g,
-      ),
-    ),
-    waterDistance: distance(
-      rasterizeLines(
-        f.water.map((l) => l.map(toLv95)),
-        g,
-      ),
-    ),
-    drinkingDistance: distance(rasterizePoints(f.drinking.map(toLv95), g)),
+    trailDistance: distanceMap((grid) => rasterizeLines(trails, grid), g, pad),
+    waterDistance: distanceMap((grid) => rasterizeLines(water, grid), g, pad),
+    drinkingDistance: distanceMap((grid) => rasterizePoints(drinking, grid), g, pad),
   };
 }
 
