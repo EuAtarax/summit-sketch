@@ -90,8 +90,8 @@ describe('campScore', () => {
     expect(Number.isNaN(out[1]!)).toBe(true);
   });
 
-  it('cuts ground where a protection is in force, only when asked, and leaves out-of-season areas', () => {
-    const protection = { index: Uint8Array.of(1, 2), inForce: [true, false] };
+  it('cuts ground where a protection hides it, only when asked, and leaves the others', () => {
+    const protection = { index: Uint8Array.of(1, 2), hides: [true, false] };
     const inputs = { suitability: Float32Array.of(1, 1), protection };
     expect(Array.from(campScore(inputs, DEFAULT_NEARBY, true))).toEqual([0, 1]);
     expect(Array.from(campScore(inputs, DEFAULT_NEARBY, false))).toEqual([1, 1]);

@@ -8,25 +8,24 @@ import { NominatimClient } from '../search/nominatim';
 import { SwisstopoSuggester } from '../search/swisstopo';
 import { createSearchBar } from '../ui/searchBar';
 import { reloadWhenUpdated } from '../ui/updates';
-import { patchMinimum, pitchSuitability } from './analysis';
-import { AnalysisClient, SupersededError } from './analysisClient';
+import {
+  AnalysisClient,
+  SupersededError,
+  type ResultSummary,
+  type ViewUpdate,
+} from './analysisClient';
 import { createBaseMap, OVERLAY_PANE } from './baseMap';
-import { LAYERS, makeColorizer, renderOverlay, type LayerId } from './heatmap';
-import { isInSwitzerland, lv95ToWgs84, wgs84ToLv95 } from './lv95';
+import { LAYERS } from './heatmap';
+import { isInSwitzerland, wgs84ToLv95 } from './lv95';
+import type { SpotView } from './model';
 import { DRINKING_LABELS } from './osm';
 import { createPanel } from './panel';
-import { createProgressBar, progressFraction } from './progress';
-import type { AnalysisResult, Progress } from './pipeline';
-import { campScore, pickSpots, type Spot } from './scoring';
+import type { Progress } from './pipeline';
+import { createProgressBar, progressFraction, shortStage } from './progress';
+import { createSpotProgress } from './spotProgress';
 import { loadSettings, saveSettings, withPatch, type CampingSettings } from './settings';
-import {
-  describeCell,
-  describeSpot,
-  NO_GOOD_SPOTS,
-  protectedLayer,
-  protectionAt,
-  restrictionNotice,
-} from './summary';
+import { lookupSwissPlace, rulesFor } from './rules';
+import { NO_GOOD_SPOTS, restrictionNotice } from './summary';
 import { DTM_2M, windowBounds, windowCorners } from './terrain';
 import { createToast } from './toast';
 
@@ -44,12 +43,9 @@ const BLUE = '#1E6EC8';
 
 let settings: CampingSettings = loadSettings();
 let spot: { lat: number; lon: number } | null = null;
-let result: AnalysisResult | null = null;
-/** Derived from `result` and the settings by rescore(). */
-let suitability: Float32Array | null = null;
-let score: Float32Array | null = null;
-let protectedValues: Float32Array | null = null;
-let spots: Spot[] = [];
+/** The latest finished analysis; its grids stay in the worker. */
+let result: ResultSummary | null = null;
+let spots: SpotView[] = [];
 
 // --- map and panel ----------------------------------------------------------------------
 
@@ -82,11 +78,14 @@ const panel = createPanel(app, settings, {
     if (patch.overlays) showOverlays(settings.overlays);
     if (patch.opacity !== undefined) overlay?.setOpacity(settings.opacity);
     if (patch.showDrinking !== undefined) showDrinkingSources();
-    if (patch.layer || patch.palette) renderLayer();
+    if (patch.layer || patch.palette) {
+      panel.setLegend(settings.layer, settings.palette);
+      refreshView();
+    }
   },
   onModelChange(patch) {
     update(patch);
-    scheduleRescore();
+    scheduleRefresh();
   },
   onSpotSelect: focusSpot,
   onLocate: locate,
@@ -114,6 +113,7 @@ let marker: L.CircleMarker | null = null;
 let outline: L.Polygon | null = null;
 let overlay: L.ImageOverlay | null = null;
 const client = new AnalysisClient();
+const spotProgress = createSpotProgress(map);
 
 function selectSpot(lat: number, lon: number): void {
   if (!isInSwitzerland(lat, lon)) {
@@ -139,7 +139,26 @@ function selectSpot(lat: number, lon: number): void {
     exact: '1',
   }).toString();
   panel.setPanoramaLink(href.toString());
+  showRules(lat, lon);
   startAnalysis();
+}
+
+let rulesSeq = 0;
+/** Looks up canton and commune at the spot and shows the camping rules recorded for them. */
+function showRules(lat: number, lon: number): void {
+  const mine = ++rulesSeq;
+  panel.setRules({ state: 'loading' });
+  lookupSwissPlace(lat, lon)
+    .then((place) => {
+      if (mine !== rulesSeq) return;
+      const placeName = place ? [place.commune, place.regionName].filter(Boolean).join(', ') : null;
+      panel.setRules({ state: 'ready', placeName, entries: place ? rulesFor(place) : [] });
+    })
+    .catch((err: unknown) => {
+      if (mine !== rulesSeq) return;
+      console.warn('Place lookup failed', err);
+      panel.setRules({ state: 'failed' });
+    });
 }
 
 function analysisWindow(): { e: number; n: number; half: number } {
@@ -155,6 +174,8 @@ function drawOutline(solid: boolean): void {
     color: RED,
     weight: solid ? 1.5 : 2,
     dashArray: solid ? undefined : '6 6',
+    // While loading, the dashes march around the box (see camping.css).
+    className: solid ? 'analysis-outline' : 'analysis-outline loading',
     fill: false,
     interactive: false,
   }).addTo(map);
@@ -180,33 +201,34 @@ function startAnalysis(): void {
   drawOutline(false);
   panel.setStatus('Loading terrain...');
   progressBar.update(0.03);
+  spotProgress.start([spot.lat, spot.lon], 'Loading terrain');
   const { e, n, half } = analysisWindow();
   client
     .run({ e, n, halfSizeM: half, canopy: settings.canopy, date: Date.now() }, (p) => {
       panel.setStatus(describeProgress(p));
       progressBar.update(progressFraction(p));
+      spotProgress.update(shortStage(p), progressFraction(p));
     })
     .then(onResult)
     .catch((err: unknown) => {
       if (err instanceof SupersededError) return;
       console.error(err);
       progressBar.finish();
+      spotProgress.finish();
       say("Couldn't load terrain data. Check your connection and try again by tapping the map.");
     });
 }
 
-function onResult(res: AnalysisResult): void {
+function onResult(res: ResultSummary): void {
   result = res;
-  protectedValues = protectedLayer(res);
   panel.setWarnings(res.warnings);
   panel.setAreas(res.areas);
   showDrinkingSources();
-  rescore();
+  refreshView();
   drawOutline(true);
   progressBar.finish();
-  const { e, n } = wgs84ToLv95(spot!.lat, spot!.lon);
-  const area = protectionAt(res, e, n);
-  if (area) showToast(restrictionNotice(area));
+  spotProgress.finish();
+  if (res.areaAtCenter) showToast(restrictionNotice(res.areaAtCenter));
   if (window.matchMedia('(max-width: 640px)').matches) {
     panel.setOpen(false);
     update({ panelOpen: false });
@@ -215,88 +237,55 @@ function onResult(res: AnalysisResult): void {
 
 // --- scoring, layers, markers ------------------------------------------------------------
 
-/** Recomputes suitability, the camp score and the best spots from the stored grids. */
-function rescore(): void {
+let viewSeq = 0;
+let overlayUrl: string | null = null;
+
+/**
+ * Asks the worker for the best spots and the heatmap under the current settings (it rescores
+ * only when the scoring settings changed) and shows them. Replies to older requests are dropped.
+ */
+function refreshView(): void {
   if (!result) return;
-  const { width, height } = result.geometry;
-  const p = settings.suitability;
-  suitability = patchMinimum(
-    pitchSuitability(result.slope, result.roughness, result.canopy, p, result.water),
-    width,
-    height,
-    p.patchRadiusCells,
-  );
-  score = campScore(
-    {
-      suitability,
-      ...(result.trailDistance ? { trailDistance: result.trailDistance } : {}),
-      ...(result.waterDistance ? { waterDistance: result.waterDistance } : {}),
-      ...(result.drinkingDistance ? { drinkingDistance: result.drinkingDistance } : {}),
-      ...(result.protectionIndex
-        ? {
-            protection: {
-              index: result.protectionIndex,
-              inForce: result.areas.map((a) => a.inForce),
-            },
-          }
-        : {}),
-    },
-    settings.nearby,
-    settings.hideProtected,
-  );
-  spots = pickSpots(score, result.geometry);
-  renderLayer();
-  showSpots();
-  panel.setSpots(
-    spots.map((s) => describeSpot(result!, s)),
-    NO_GOOD_SPOTS,
-  );
-  panel.setStatus('');
+  const seq = ++viewSeq;
+  const { suitability, nearby, hideProtected, layer, palette } = settings;
+  client
+    .view({ suitability, nearby, hideProtected }, layer, palette)
+    .then((view) => {
+      if (view && seq === viewSeq) showView(view);
+    })
+    .catch((err: unknown) => {
+      if (!(err instanceof SupersededError)) console.error(err);
+    });
 }
 
-let rescoreTimer = 0;
-function scheduleRescore(): void {
-  clearTimeout(rescoreTimer);
-  rescoreTimer = window.setTimeout(rescore, RESCORE_DELAY_MS);
-}
-
-function valuesOf(layer: LayerId): Float32Array | undefined {
-  if (!result) return undefined;
-  const byLayer: Record<LayerId, Float32Array | null | undefined> = {
-    score,
-    suitability,
-    slope: result.slope,
-    roughness: result.roughness,
-    canopy: result.canopy,
-    water: result.water,
-    protected: protectedValues,
-  };
-  return byLayer[layer] ?? undefined;
-}
-
-function renderLayer(): void {
-  panel.setLegend(settings.layer, settings.palette);
-  if (!result) return;
+function showView(view: ViewUpdate): void {
+  spots = view.spots;
   overlay?.remove();
   overlay = null;
-  const values = valuesOf(settings.layer);
-  if (!values) {
+  if (overlayUrl) URL.revokeObjectURL(overlayUrl);
+  overlayUrl = null;
+  if (view.overlay) {
+    overlayUrl = URL.createObjectURL(view.overlay.blob);
+    overlay = L.imageOverlay(overlayUrl, view.overlay.bounds, {
+      opacity: settings.opacity,
+      interactive: false,
+    }).addTo(map);
+  } else {
     say(
       settings.layer === 'canopy'
         ? 'Vegetation height needs "Use vegetation height" and an area of 1 km or less.'
         : `${LAYERS[settings.layer].label} is not available for this area.`,
     );
-    return;
   }
-  const image = renderOverlay(
-    result.geometry,
-    values,
-    makeColorizer(settings.layer, settings.palette),
-  );
-  overlay = L.imageOverlay(image.canvas.toDataURL(), image.bounds, {
-    opacity: settings.opacity,
-    interactive: false,
-  }).addTo(map);
+  showSpots();
+  panel.setSpots(spots, NO_GOOD_SPOTS);
+  panel.setStatus('');
+}
+
+let refreshTimer = 0;
+function scheduleRefresh(): void {
+  clearTimeout(refreshTimer);
+  refreshTimer = window.setTimeout(refreshView, RESCORE_DELAY_MS);
 }
 
 const spotLayer = L.layerGroup().addTo(map);
@@ -305,8 +294,6 @@ function showSpots(): void {
   spotLayer.clearLayers();
   spotMarkers.clear();
   for (const s of spots) {
-    const { lat, lon } = lv95ToWgs84(s.e, s.n);
-    const item = describeSpot(result!, s);
     const icon = L.divIcon({
       className: 'spot-marker',
       html: `<span>${s.rank}</span>`,
@@ -314,8 +301,8 @@ function showSpots(): void {
     });
     spotMarkers.set(
       s.rank,
-      L.marker([lat, lon], { icon, pane: OVERLAY_PANE })
-        .bindPopup(`<strong>${item.title}</strong><br>${item.detail}`)
+      L.marker([s.lat, s.lon], { icon, pane: OVERLAY_PANE })
+        .bindPopup(`<strong>${s.title}</strong><br>${s.detail}`)
         .on('click', () => focusSpot(s.rank))
         .addTo(spotLayer),
     );
@@ -376,32 +363,32 @@ function setupHoverReadout(): void {
   readout.hidden = true;
   mapEl.append(readout);
   let frame = 0;
+  let seq = 0;
+  let inside = false;
   map.on('mousemove', (e: L.LeafletMouseEvent) => {
     cancelAnimationFrame(frame);
+    inside = true;
     frame = requestAnimationFrame(() => {
-      const text = result ? readoutText(e.latlng) : null;
-      readout.hidden = text === null;
-      if (text === null) return;
-      readout.textContent = text;
-      readout.style.transform = `translate(${e.containerPoint.x + 16}px, ${e.containerPoint.y + 16}px)`;
+      if (!result) return;
+      const mine = ++seq;
+      // The grids live in the worker; the answer comes back within a frame or two.
+      void client
+        .describe(e.latlng.lat, e.latlng.lng)
+        .catch(() => null)
+        .then((text) => {
+          if (mine !== seq || !inside) return;
+          readout.hidden = text === null;
+          if (text === null) return;
+          readout.textContent = text;
+          readout.style.transform = `translate(${e.containerPoint.x + 16}px, ${e.containerPoint.y + 16}px)`;
+        });
     });
   });
   map.on('mouseout', () => {
     cancelAnimationFrame(frame);
+    inside = false;
     readout.hidden = true;
   });
-}
-
-function readoutText(at: L.LatLng): string | null {
-  const g = result!.geometry;
-  const p = wgs84ToLv95(at.lat, at.lng);
-  const col = Math.floor((p.e - g.e0) / g.cell);
-  const row = Math.floor((g.n0 - p.n) / g.cell);
-  if (col < 0 || row < 0 || col >= g.width || row >= g.height) return null;
-  const i = row * g.width + col;
-  if (!score || Number.isNaN(score[i]!)) return null;
-  const rough = `${result!.roughness[i]!.toFixed(2)} m rough`;
-  return `Score ${Math.round(score[i]! * 100)} %, ${describeCell(result!, col, row)}, ${rough}`;
 }
 setupHoverReadout();
 
@@ -458,9 +445,7 @@ Object.assign(globalThis, {
     get result() {
       return result;
     },
-    get score() {
-      return score;
-    },
+    describe: (lat: number, lon: number) => client.describe(lat, lon),
     get spots() {
       return spots;
     },

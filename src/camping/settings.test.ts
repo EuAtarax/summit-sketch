@@ -58,9 +58,10 @@ describe('sanitizeSuitability', () => {
     expect(p.patchRadiusCells).toBe(3);
   });
 
-  it('keeps the fade well-formed: the steepest slope stays above the comfortable one', () => {
-    const p = sanitizeSuitability({ slopeOkDeg: 12, slopeMaxDeg: 5 });
-    expect(p.slopeMaxDeg).toBeGreaterThan(p.slopeOkDeg);
+  it('derives the slope limit from the comfortable slope, ignoring a stored one', () => {
+    expect(sanitizeSuitability({ slopeOkDeg: 5, slopeMaxDeg: 30 }).slopeMaxDeg).toBe(10);
+    expect(sanitizeSuitability({ slopeOkDeg: 12 }).slopeMaxDeg).toBe(24);
+    expect(sanitizeSuitability({ slopeOkDeg: 1 }).slopeMaxDeg).toBe(4); // at least 3° of fade
   });
 });
 

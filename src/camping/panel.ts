@@ -4,6 +4,7 @@ import { LAYERS, type LayerId } from './heatmap';
 import { OVERLAYS } from './overlays';
 import { PALETTES, paletteGradientCss, type PaletteId } from './palettes';
 import type { AreaInfo } from './pipeline';
+import { rulesNodes, type RulesState } from './rulesView';
 import type { NearbyParams } from './scoring';
 import { formatSignedMeters, type SpotItem } from './summary';
 import {
@@ -11,6 +12,7 @@ import {
   DEFAULT_SETTINGS,
   MAX_CANOPY_AREA_KM,
   NEARBY_CONTROLS,
+  sanitizeSuitability,
   SUITABILITY_CONTROLS,
   type AreaKm,
   type CampingSettings,
@@ -45,6 +47,8 @@ export interface Panel {
   /** The list of best spots; `emptyText` says why there are none. */
   setSpots(items: readonly SpotItem[], emptyText?: string): void;
   setAreas(areas: readonly AreaInfo[]): void;
+  /** The camping rules that apply at the chosen spot (canton, Bundesland, commune). */
+  setRules(state: RulesState): void;
   setOpen(open: boolean): void;
   /** Keeps the vegetation checkbox in step with the chosen area. */
   syncFrom(settings: CampingSettings): void;
@@ -63,8 +67,9 @@ function pitchSection(
   let params = initial;
   const sliders = new Map<keyof SuitabilityParams, ReturnType<typeof sliderRow>>();
   const rows = SUITABILITY_CONTROLS.map((c) => {
+    // Sanitizing also derives the values that follow from a slider (the slope limit).
     const row = sliderRow({ ...c, value: initial[c.key] }, (value) =>
-      onChange((params = { ...params, [c.key]: value })),
+      onChange((params = sanitizeSuitability({ ...params, [c.key]: value }))),
     );
     sliders.set(c.key, row);
     return row.node;
@@ -172,9 +177,11 @@ function makeOpacity(initial: number, onInput: (opacity: number) => void): HTMLI
 }
 
 const areaText = (a: AreaInfo): string => {
-  const season = a.period
-    ? `${a.period}${a.inForce ? ' (in force today)' : ' (not in force today)'}`
-    : 'all year';
+  const season = !a.restricts
+    ? 'listed for information, hides nothing'
+    : a.period
+      ? `${a.period}${a.inForce ? ' (in force today)' : ' (not in force today)'}`
+      : 'all year';
   return [a.kind, season, a.rule].filter(Boolean).join(' | ');
 };
 
@@ -210,9 +217,11 @@ export function createPanel(
     'Hide ground where a protection is in force',
     initial.hideProtected,
     (hideProtected) => handlers.onModelChange({ hideProtected }),
-    'Protections that apply only in other seasons (like winter refuges in summer) are shown but do not hide anything. Always check the rules of the area yourself.',
+    'Protections that apply only in other seasons (like winter refuges in summer) are shown but do not hide anything, and neither do nature parks and moorland landscapes, which are large and listed for information. Always check the rules of the area yourself.',
   );
   const areas = section('Protected areas in this box', false, hide.node, areaList);
+  const rulesBody = el('div', { className: 'rules' }, ...rulesNodes({ state: 'none' }));
+  const rules = section('Camping rules here', true, rulesBody);
 
   // Area and heatmap.
   const canopy = checkRow(
@@ -254,7 +263,7 @@ export function createPanel(
     tabs([
       {
         label: 'Spots',
-        content: el('div', { className: 'tab-body' }, spots, areas, panorama, locate),
+        content: el('div', { className: 'tab-body' }, spots, rules, areas, panorama, locate),
       },
       {
         label: 'Tune',
@@ -378,6 +387,9 @@ export function createPanel(
               ),
             )),
       );
+    },
+    setRules(state) {
+      rulesBody.replaceChildren(...rulesNodes(state));
     },
     setOpen,
     syncFrom(next) {

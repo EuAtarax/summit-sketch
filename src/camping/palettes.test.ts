@@ -4,6 +4,7 @@ import {
   PALETTES,
   paletteColor,
   paletteGradientCss,
+  paletteLut,
   type PaletteId,
 } from './palettes';
 
@@ -32,5 +33,16 @@ describe('palettes', () => {
     expect(isPaletteId('rainbow')).toBe(false);
     expect(isPaletteId(3)).toBe(false);
     expect(paletteGradientCss('green')).toMatch(/^linear-gradient\(90deg, rgb\(/);
+  });
+});
+
+describe('paletteLut', () => {
+  it.each(ids)('%s has 256 colors from the worst to the best end', (id) => {
+    const lut = paletteLut(id);
+    expect(lut).toHaveLength(256 * 3);
+    const [r0, g0, b0] = PALETTES[id].colors[0]!;
+    const [r1, g1, b1] = PALETTES[id].colors[PALETTES[id].colors.length - 1]!;
+    expect(Array.from(lut.subarray(0, 3))).toEqual([r0, g0, b0]);
+    expect(Array.from(lut.subarray(765, 768))).toEqual([r1, g1, b1]);
   });
 });

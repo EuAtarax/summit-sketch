@@ -74,16 +74,7 @@ export const SUITABILITY_CONTROLS: readonly {
     min: 1,
     max: 15,
     step: 0.5,
-    help: 'Up to this slope a tent is comfortable and you do not slide off your mat. About 5° is the usual recommendation.',
-  },
-  {
-    key: 'slopeMaxDeg',
-    label: 'Steepest slope',
-    unit: '°',
-    min: 3,
-    max: 30,
-    step: 0.5,
-    help: 'From this slope on a cell is ruled out. Between the two values the suitability fades. Above 10° sleeping gets hard.',
+    help: 'The steepest ground you still sleep well on. Up to this slope ground counts fully; steeper ground fades out and is ruled out at twice this slope (at 5°, from 10° on). About 5° is the usual recommendation: you do not slide off your mat.',
   },
   {
     key: 'roughMaxM',
@@ -154,6 +145,13 @@ export const NEARBY_CONTROLS: readonly {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/**
+ * Where slope rules ground out, from the comfortable slope: twice as steep, and at least 3°
+ * steeper so the fade never becomes a cliff (5° gives 10°, the usual limit for sleeping).
+ */
+export const slopeLimitFor = (comfortableDeg: number): number =>
+  Math.max(2 * comfortableDeg, comfortableDeg + 3);
+
 /** Coerces stored or edited suitability values into a consistent, in-range set. */
 export function sanitizeSuitability(raw: unknown): SuitabilityParams {
   const r = (raw ?? {}) as Partial<Record<keyof SuitabilityParams, unknown>>;
@@ -164,8 +162,8 @@ export function sanitizeSuitability(raw: unknown): SuitabilityParams {
       : (DEFAULT_SUITABILITY[key] as number);
   };
   const slopeOkDeg = num('slopeOkDeg', 1, 15);
-  // The fade needs room: the steepest slope always lies above the comfortable one.
-  const slopeMaxDeg = Math.max(num('slopeMaxDeg', 3, 30), slopeOkDeg + 1);
+  // Only the comfortable slope is a setting; the limit follows from it.
+  const slopeMaxDeg = slopeLimitFor(slopeOkDeg);
   const roughOkM = DEFAULT_SUITABILITY.roughOkM;
   const canopyOkM = DEFAULT_SUITABILITY.canopyOkM;
   return {

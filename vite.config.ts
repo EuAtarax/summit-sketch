@@ -6,6 +6,8 @@ const base = process.env.BASE_PATH ?? '/summit-sketch/';
 
 /** Terrain tiles are ~80 KB each, so 2500 entries is about the 200 MB budget. */
 const TERRAIN_TILE_ENTRIES = 2500;
+/** Swiss 2 m terrain tiles are 1.2 MB each: 150 is about 180 MB, six 4 x 4 km areas. */
+const SWISS_TERRAIN_ENTRIES = 150;
 
 export default defineConfig({
   base,
@@ -65,6 +67,34 @@ export default defineConfig({
               cacheName: 'terrain-tiles',
               cacheableResponse: { statuses: [200] },
               expiration: { maxEntries: TERRAIN_TILE_ENTRIES, purgeOnQuotaError: true },
+            },
+          },
+          {
+            // The camping finder's 2 m Swiss terrain (1.2 MB per 1 km tile, fetched whole with a
+            // plain GET). swisstopo only allows 2 hours of HTTP caching, but a survey year's
+            // file does not change, so keep it; a new survey gets a new URL.
+            urlPattern:
+              /^https:\/\/data\.geo\.admin\.ch\/ch\.swisstopo\.swissalti3d\/.+_2_2056_\d+\.tif$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'swiss-terrain-2m',
+              cacheableResponse: { statuses: [200] },
+              expiration: {
+                maxEntries: SWISS_TERRAIN_ENTRIES,
+                maxAgeSeconds: 180 * 24 * 3600,
+                purgeOnQuotaError: true,
+              },
+            },
+          },
+          {
+            // Which tiles exist where: answer from the cache at once (offline too) and refresh it
+            // in the background.
+            urlPattern: /^https:\/\/data\.geo\.admin\.ch\/api\/stac\//,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'swiss-stac',
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 300, maxAgeSeconds: 30 * 24 * 3600 },
             },
           },
         ],

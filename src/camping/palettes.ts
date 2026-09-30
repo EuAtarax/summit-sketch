@@ -53,7 +53,7 @@ export const PALETTES: Record<PaletteId, { label: string; colors: readonly Rgb[]
   },
 };
 
-export const DEFAULT_PALETTE: PaletteId = 'green';
+export const DEFAULT_PALETTE: PaletteId = 'magma';
 
 export function isPaletteId(value: unknown): value is PaletteId {
   return typeof value === 'string' && value in PALETTES;
@@ -77,4 +77,16 @@ export function paletteGradientCss(id: PaletteId): string {
     return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
   });
   return `linear-gradient(90deg, ${stops.join(', ')})`;
+}
+
+/** 256 colors along a palette as packed RGB bytes, for painting millions of pixels quickly. */
+export function paletteLut(id: PaletteId): Uint8Array {
+  const lut = new Uint8Array(256 * 3);
+  for (let k = 0; k < 256; k++) {
+    const [r, g, b] = paletteColor(id, k / 255);
+    lut[k * 3] = Math.round(r);
+    lut[k * 3 + 1] = Math.round(g);
+    lut[k * 3 + 2] = Math.round(b);
+  }
+  return lut;
 }

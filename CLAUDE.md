@@ -9,8 +9,8 @@ Read `docs/PLAN.md` (phases and acceptance criteria) and `docs/STYLES.md` (style
 
 ## Hard constraints
 
-- **Free to run.** The app is static hosting only: no backend, no API keys, and no services that need a billing account. Do not use Google Maps, Google 3D Tiles, Mapbox, or anything with paid tiers.
-- **All computation happens client-side**, in the user's browser.
+- **Free or very cheap to run.** The app itself is static (GitHub Pages). Small hosted pieces are fine when they unlock data or features: a proxy (e.g. to add CORS to an open data server), a database, an offline precompute job, preferably on free tiers and at most a few euros a month. API keys are fine when they are free or very cheap; a key that must stay secret lives in the hosted piece, never in the client bundle. Do not use Google Maps, Google 3D Tiles, Mapbox, or anything with usage-priced tiers that could run up a bill.
+- **The analysis runs client-side**, in the user's browser. Offline precomputation (e.g. prediction rasters) is fine when the result is served as static files.
 - **Mobile-first.** The app must stay responsive on a mid-range phone. Heavy work runs in Web Workers, and the main thread never blocks for more than ~50 ms.
 - **Worldwide coverage for the panorama.** Never hardcode anything to the Alps there. The camping finder is Switzerland-only on purpose (it needs swisstopo's 2 m terrain and BAFU data); keep its data providers behind interfaces so other countries can follow.
 - **Respect data providers.** Follow their usage policies, cache aggressively, and show attribution in the app and on every exported image.
@@ -37,6 +37,7 @@ Keep dependencies minimal. Ask before adding any dependency larger than ~50 kB g
 | Map picker tiles | OpenStreetMap standard tiles, OpenTopoMap (terrain), EOX Sentinel-2 cloudless (satellite) | Light use with attribution is fine. Providers live in `ui/mapConfig.ts`. EOX is CC BY-NC-SA 4.0: the app must stay non-commercial. |
 | Swiss terrain and maps (camping finder, Switzerland only) | swisstopo: swissALTI3D and swissSURFACE3D Cloud-Optimized GeoTIFFs via the STAC API (`data.geo.admin.ch`), WMTS tiles (`wmts.geo.admin.ch`), BAFU layers via `api3.geo.admin.ch` | Open Government Data: free including commercial use, source "© swisstopo" required. All CORS-open. Read with range requests or whole small files, in LV95 (`camping/lv95.ts`). |
 | Trails, water, drinking water (camping finder) | OSM via Overpass, one query per analysis box | `way[highway=path|footway|track...]`, `waterway`, `natural=water`, `amenity=drinking_water`, `natural=spring`. Cached a week in IndexedDB; same retry rules as the peaks. Endpoint configurable with `VITE_OVERPASS_URL`. |
+| Camping rules (camping finder) | `src/camping/rules/` (hand-curated, sourced entries per country, canton or Bundesland, and commune); canton and commune at a spot from the geo.admin.ch identify service (swissBOUNDARIES3D, one year via `timeInstant`) | Every entry names its sources, a verification level (law text read, or a summary that names the law) and the date checked. Texts describe the law and never say a spot is allowed (a test enforces this). |
 | Protected areas (camping finder) | BAFU layers via `api3.geo.admin.ch` identify | Eight federal inventories as polygons, with protection periods. Federal law only; cantonal and local rules are not covered, so the UI must never say a spot is allowed. |
 
 Attribution line (app footer and exports): "Elevation: Terrain Tiles (Mapzen/AWS, see sources) · Map data © OpenStreetMap contributors".

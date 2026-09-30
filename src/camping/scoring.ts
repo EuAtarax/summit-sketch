@@ -53,8 +53,9 @@ export interface ScoreInputs {
   trailDistance?: Float32Array;
   waterDistance?: Float32Array;
   drinkingDistance?: Float32Array;
-  /** 1-based index of the protected area on each cell (0 = none) and whether each is in force. */
-  protection?: { index: Uint8Array; inForce: readonly boolean[] };
+  /** 1-based index of the protected area on each cell (0 = none) and whether each hides ground
+   * today (a restriction in force; see hidesGround). */
+  protection?: { index: Uint8Array; hides: readonly boolean[] };
 }
 
 /**
@@ -88,7 +89,7 @@ export function campScore(
     }
     if (hideProtected && protection) {
       const area = protection.index[i]!;
-      if (area > 0 && protection.inForce[area - 1]) score = 0;
+      if (area > 0 && protection.hides[area - 1]) score = 0;
     }
     out[i] = score;
   }

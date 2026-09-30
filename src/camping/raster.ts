@@ -153,3 +153,34 @@ export function distanceTransform(
     out[i] = grid[i]! >= FAR ? Infinity : Math.sqrt(grid[i]!) * cell;
   return out;
 }
+
+/** The same grid grown by `cells` on every side (same cell size, cells stay aligned). */
+export function padGeometry(g: GridGeometry, cells: number): GridGeometry {
+  return {
+    e0: g.e0 - cells * g.cell,
+    n0: g.n0 + cells * g.cell,
+    cell: g.cell,
+    width: g.width + 2 * cells,
+    height: g.height + 2 * cells,
+  };
+}
+
+/**
+ * Distance in meters from each cell of `g` to the nearest feature. `mark` rasterizes the
+ * features onto `g` grown by `padCells`, so a trail or spring just outside the window still
+ * counts for the cells along its edge; the result is cropped back to `g`.
+ */
+export function distanceMap(
+  mark: (grid: GridGeometry) => Uint8Array,
+  g: GridGeometry,
+  padCells: number,
+): Float32Array {
+  const padded = padGeometry(g, padCells);
+  const full = distanceTransform(mark(padded), padded.width, padded.height, g.cell);
+  const out = new Float32Array(g.width * g.height);
+  for (let row = 0; row < g.height; row++) {
+    const from = (row + padCells) * padded.width + padCells;
+    out.set(full.subarray(from, from + g.width), row * g.width);
+  }
+  return out;
+}

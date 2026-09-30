@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAYERS, makeColorizer, type LayerId } from './heatmap';
+import { LAYERS, makeColorizer, overlayGrid, paintOverlay, type LayerId } from './heatmap';
 import { paletteColor } from './palettes';
 
 const layers = Object.keys(LAYERS) as LayerId[];
@@ -58,5 +58,35 @@ describe('special layers', () => {
     const score = makeColorizer('score', 'viridis');
     const terrain = makeColorizer('suitability', 'viridis');
     expect(score(0.8)).toEqual(terrain(0.8));
+  });
+});
+
+describe('overlayGrid and paintOverlay', () => {
+  // 100 x 100 cells of 2 m near Schwanden GL.
+  const g = { e0: 2722000, n0: 1205000, cell: 2, width: 100, height: 100 };
+  const og = overlayGrid(g);
+
+  it('maps every pixel to a cell of the grid, or to -1 in the corners the rotation leaves', () => {
+    expect(og.cells).toHaveLength(og.width * og.height);
+    expect(Math.max(og.width, og.height)).toBe(1200);
+    const inside = og.cells.filter((c) => c >= 0).length;
+    expect(inside / og.cells.length).toBeGreaterThan(0.95);
+    expect(og.cells.reduce((m, c) => Math.max(m, c), -1)).toBeLessThan(g.width * g.height);
+  });
+
+  it.each(layers)('paints %s like makeColorizer', (layer) => {
+    const values = Float32Array.from({ length: 100 * 100 }, (_, i) =>
+      layer === 'water' || layer === 'protected' ? i % 3 : (i % 97) / 7,
+    );
+    values[0] = Number.NaN;
+    const rgba = paintOverlay(og, values, layer, 'viridis');
+    const color = makeColorizer(layer, 'viridis');
+    for (let p = 0; p < og.cells.length; p += 997) {
+      const cell = og.cells[p]!;
+      const expected = cell < 0 ? [0, 0, 0, 0] : Array.from(color(values[cell]!));
+      const got = Array.from(rgba.subarray(p * 4, p * 4 + 4));
+      // Palette colors come from a 256-step table; alpha is exact up to rounding.
+      got.forEach((v, k) => expect(Math.abs(v - expected[k]!)).toBeLessThanOrEqual(2));
+    }
   });
 });

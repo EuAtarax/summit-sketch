@@ -172,6 +172,7 @@ describe('runAnalysis', () => {
       kind: 'Game reserve',
       name: 'Testbann',
       inForce: true,
+      restricts: true,
     });
     expect(result.areas[0]).not.toHaveProperty('polygons');
   });

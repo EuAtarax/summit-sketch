@@ -1,5 +1,6 @@
 import { formatDistance } from '../ui/format';
 import type { AnalysisResult, AreaInfo } from './pipeline';
+import { hidesGround } from './protection';
 import type { Spot } from './scoring';
 
 export const NO_GOOD_SPOTS =
@@ -50,18 +51,24 @@ export function describeCell(res: AnalysisResult, col: number, row: number): str
     near('a trail', res.trailDistance),
     near('water', res.waterDistance),
     near('drinking water', res.drinkingDistance),
-    area ? `in ${area.kind}: ${area.name}${area.inForce ? '' : ' (not in force today)'}` : null,
+    area ? `in ${area.kind}: ${area.name}${notInForce(area) ? ' (not in force today)' : ''}` : null,
   ];
   return parts.filter(Boolean).join(', ');
 }
 
-/** 0 = not protected, 1 = protected but not in force today, 2 = in force (for the map layer). */
+/** A restriction that exists but does not apply today (a winter refuge in summer). */
+const notInForce = (a: AreaInfo): boolean => a.restricts && !a.inForce;
+
+/**
+ * 0 = not protected, 1 = flagged but hides nothing today (out of season, or a large area listed
+ * for information), 2 = a restriction in force (for the map layer).
+ */
 export function protectedLayer(res: AnalysisResult): Float32Array | null {
   const index = res.protectionIndex;
   if (!index) return null;
   const out = new Float32Array(index.length);
   index.forEach((area, i) => {
-    out[i] = area === 0 ? 0 : res.areas[area - 1]!.inForce ? 2 : 1;
+    out[i] = area === 0 ? 0 : hidesGround(res.areas[area - 1]!) ? 2 : 1;
   });
   return out;
 }
@@ -78,6 +85,7 @@ export function protectionAt(res: AnalysisResult, e: number, n: number): AreaInf
 
 /** The short warning for a chosen spot inside a protected area. Never says camping is allowed. */
 export function restrictionNotice(area: AreaInfo): string {
+  if (!area.restricts) return `In ${area.kind}: ${area.name}. Check local rules.`;
   const state = area.inForce ? 'in force today' : 'not in force today';
   return `In ${area.kind}: ${area.name} (${state}). Check local rules.`;
 }

@@ -1,5 +1,5 @@
 import { wgs84ToLv95 } from './lv95';
-import { paletteColor, type PaletteId } from './palettes';
+import { paletteColor, paletteLut, type PaletteId } from './palettes';
 import { windowCorners, type GridGeometry } from './terrain';
 
 export type Rgba = readonly [number, number, number, number];
@@ -23,6 +23,11 @@ interface LayerDef {
 }
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+const CLEAR: Rgba = [0, 0, 0, 0];
+const LAKE: Rgba = [30, 110, 200, 170];
+const IN_FORCE: Rgba = [200, 30, 40, 150];
+const FLAGGED: Rgba = [240, 150, 40, 120];
 
 /** Higher is better; the two main layers share this look. */
 const suitabilityLike = {
@@ -60,7 +65,7 @@ export const LAYERS: Record<LayerId, LayerDef> = {
     label: 'Lakes and flat surfaces',
     goodness: () => 0,
     alpha: () => 0,
-    colorOf: (v) => (v === 1 ? [30, 110, 200, 170] : [0, 0, 0, 0]),
+    colorOf: (v) => (v === 1 ? LAKE : CLEAR),
     legend: 'rgb(30,110,200)',
     worst: 'lake or level surface',
     best: 'not flat',
@@ -69,10 +74,10 @@ export const LAYERS: Record<LayerId, LayerDef> = {
     label: 'Protected areas',
     goodness: () => 0,
     alpha: () => 0,
-    // 1 = protected but not in force today (e.g. a winter refuge in summer), 2 = in force.
-    colorOf: (v) => (v === 2 ? [200, 30, 40, 150] : v === 1 ? [240, 150, 40, 120] : [0, 0, 0, 0]),
+    // 1 = flagged but hides nothing today (a winter refuge in summer, a nature park), 2 = in force.
+    colorOf: (v) => (v === 2 ? IN_FORCE : v === 1 ? FLAGGED : CLEAR),
     legend: 'linear-gradient(90deg, rgb(240,150,40), rgb(200,30,40))',
-    worst: 'not in force today',
+    worst: 'flagged, hides nothing',
     best: 'in force today',
   },
 };
@@ -81,7 +86,7 @@ export const LAYERS: Record<LayerId, LayerDef> = {
 export function makeColorizer(layer: LayerId, palette: PaletteId): (value: number) => Rgba {
   const def = LAYERS[layer];
   return (value) => {
-    if (Number.isNaN(value)) return [0, 0, 0, 0];
+    if (Number.isNaN(value)) return CLEAR;
     if (def.colorOf) return def.colorOf(value);
     const g = def.goodness(value);
     const [r, gr, b] = paletteColor(palette, g);
@@ -89,24 +94,24 @@ export function makeColorizer(layer: LayerId, palette: PaletteId): (value: numbe
   };
 }
 
-export interface Overlay {
-  canvas: HTMLCanvasElement;
+/**
+ * Where each pixel of a north-up WGS84 image of a grid falls in the grid. The LV95 grid is
+ * rotated against geographic north (about 1 degree in eastern Switzerland), so every pixel is
+ * projected into the grid rather than drawing the grid as an image. Computed once per
+ * analysis: the projection is the slow part, and it never changes when only colors do.
+ */
+export interface OverlayGrid {
+  width: number;
+  height: number;
   /** [[south, west], [north, east]] for Leaflet. */
   bounds: [[number, number], [number, number]];
+  /** Grid cell index per pixel, row-major from the north; -1 outside the grid. */
+  cells: Int32Array;
 }
 
 const MAX_OVERLAY_PX = 1200;
 
-/**
- * Paints a raster in LV95 onto a north-up WGS84 canvas so it lines up with web map tiles.
- * The LV95 grid is rotated against geographic north (about 1 degree in eastern Switzerland),
- * so each output pixel is looked up in the grid rather than drawing the grid as an image.
- */
-export function renderOverlay(
-  grid: GridGeometry,
-  values: Float32Array,
-  colorOf: (value: number) => Rgba,
-): Overlay {
+export function overlayGrid(grid: GridGeometry): OverlayGrid {
   const corners = windowCorners(grid);
   const south = Math.min(...corners.map((c) => c[0]));
   const north = Math.max(...corners.map((c) => c[0]));
@@ -117,11 +122,7 @@ export function renderOverlay(
   const width = aspect >= 1 ? MAX_OVERLAY_PX : Math.round(MAX_OVERLAY_PX * aspect);
   const height = aspect >= 1 ? Math.round(MAX_OVERLAY_PX / aspect) : MAX_OVERLAY_PX;
 
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d')!;
-  const image = ctx.createImageData(width, height);
+  const cells = new Int32Array(width * height).fill(-1);
   for (let py = 0; py < height; py++) {
     const lat = north - ((py + 0.5) / height) * (north - south);
     for (let px = 0; px < width; px++) {
@@ -130,20 +131,54 @@ export function renderOverlay(
       const col = Math.floor((p.e - grid.e0) / grid.cell);
       const row = Math.floor((grid.n0 - p.n) / grid.cell);
       if (col < 0 || row < 0 || col >= grid.width || row >= grid.height) continue;
-      const [r, g, b, a] = colorOf(values[row * grid.width + col]!);
-      const at = (py * width + px) * 4;
-      image.data[at] = r;
-      image.data[at + 1] = g;
-      image.data[at + 2] = b;
-      image.data[at + 3] = a;
+      cells[py * width + px] = row * grid.width + col;
     }
   }
-  ctx.putImageData(image, 0, 0);
   return {
-    canvas,
+    width,
+    height,
     bounds: [
       [south, west],
       [north, east],
     ],
+    cells,
   };
+}
+
+/**
+ * RGBA pixels of a layer over an overlay grid, colored like makeColorizer (palette colors
+ * come from a 256-step table, so they may differ from it by one unit).
+ */
+export function paintOverlay(
+  og: OverlayGrid,
+  values: Float32Array,
+  layer: LayerId,
+  palette: PaletteId,
+): Uint8ClampedArray<ArrayBuffer> {
+  const def = LAYERS[layer];
+  const lut = paletteLut(palette);
+  const rgba = new Uint8ClampedArray(og.width * og.height * 4);
+  const { cells } = og;
+  for (let p = 0; p < cells.length; p++) {
+    const cell = cells[p]!;
+    if (cell < 0) continue;
+    const v = values[cell]!;
+    if (v !== v) continue; // no data: transparent
+    const at = p * 4;
+    if (def.colorOf) {
+      const c = def.colorOf(v);
+      rgba[at] = c[0];
+      rgba[at + 1] = c[1];
+      rgba[at + 2] = c[2];
+      rgba[at + 3] = c[3];
+      continue;
+    }
+    const g = def.goodness(v);
+    const k = Math.round(clamp01(g) * 255) * 3;
+    rgba[at] = lut[k]!;
+    rgba[at + 1] = lut[k + 1]!;
+    rgba[at + 2] = lut[k + 2]!;
+    rgba[at + 3] = def.alpha(g, v);
+  }
+  return rgba;
 }
