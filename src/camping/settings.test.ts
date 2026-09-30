@@ -62,6 +62,14 @@ describe('sanitizeSuitability', () => {
   });
 });
 
+describe('panelOpen', () => {
+  it('is closed by default and keeps a stored choice', () => {
+    expect(sanitizeSettings(null).panelOpen).toBe(false);
+    expect(sanitizeSettings({ panelOpen: true }).panelOpen).toBe(true);
+    expect(sanitizeSettings({ panelOpen: 'yes' }).panelOpen).toBe(false);
+  });
+});
+
 describe('SUITABILITY_CONTROLS', () => {
   it.each(SUITABILITY_CONTROLS.map((c) => [c.key, c] as const))(
     '%s has a recommended default inside its range and an explanation',

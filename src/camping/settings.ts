@@ -217,7 +217,7 @@ export function sanitizeSettings(raw: unknown): CampingSettings {
       typeof r.hideProtected === 'boolean' ? r.hideProtected : DEFAULT_SETTINGS.hideProtected,
     showDrinking:
       typeof r.showDrinking === 'boolean' ? r.showDrinking : DEFAULT_SETTINGS.showDrinking,
-    panelOpen: r.panelOpen === true,
+    panelOpen: typeof r.panelOpen === 'boolean' ? r.panelOpen : DEFAULT_SETTINGS.panelOpen,
   };
 }
 
