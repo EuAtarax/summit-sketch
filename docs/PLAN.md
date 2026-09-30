@@ -136,6 +136,7 @@ The camping spot finder for Switzerland is the focus and the landing page of the
 Find suitable places to camp in the wild: flat enough for a small 2-person tent, near a trail, with water and a good morning sun. Nothing here is built before the spike below.
 
 **Decisions so far**
+- **Other countries:** `docs/DATA-EUROPE.md` lists, per European country, whether browser-readable terrain, surface and protected-area data exist (surveyed 2026-09-30, re-check with `scripts/probe-elevation.mjs`).
 - **Switzerland first, summer only** (Alps, no snow cover, glaciers or avalanche logic at first). Other countries later behind a provider interface.
 - **Two ways in:** an area on the map (heatmap of suitability plus a ranked list) and, when a GPX track is provided, a corridor along it ("spots between km 12 and 18"). Public hiking paths are linked in the same way (see the GPX section).
 - **Legal and protected areas are flagged, with a toggle** (show flags, and hide flagged spots). The app never states that a spot is legal or safe.
