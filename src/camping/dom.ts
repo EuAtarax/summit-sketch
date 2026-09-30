@@ -84,8 +84,8 @@ export function sliderRow(
     'div',
     { className: 'slider' },
     el('div', { className: 'slider-head' }, el('span', { textContent: c.label }), output),
-    input,
     el('small', { textContent: help }),
+    input,
   );
   return {
     node,
