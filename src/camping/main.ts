@@ -5,6 +5,7 @@ import '@fontsource/atkinson-hyperlegible/700.css';
 import '../ui/search.css';
 import './camping.css';
 import { NominatimClient } from '../search/nominatim';
+import { SwisstopoSuggester } from '../search/swisstopo';
 import { createSearchBar } from '../ui/searchBar';
 import { reloadWhenUpdated } from '../ui/updates';
 import { patchMinimum, pitchSuitability } from './analysis';
@@ -17,7 +18,7 @@ import { createPanel } from './panel';
 import type { AnalysisResult, Progress } from './pipeline';
 import { campScore, pickSpots, type Spot } from './scoring';
 import { loadSettings, saveSettings, withPatch, type CampingSettings } from './settings';
-import { describeSpot, NO_GOOD_SPOTS, protectedLayer, summarize } from './summary';
+import { describeCell, describeSpot, NO_GOOD_SPOTS, protectedLayer, summarize } from './summary';
 import { DTM_2M, windowBounds, windowCorners } from './terrain';
 
 reloadWhenUpdated();
@@ -50,7 +51,9 @@ const topBar = document.createElement('div');
 topBar.className = 'map-top';
 app.append(mapEl, topBar);
 
-const { map, showBase, showOverlays } = createBaseMap(mapEl);
+const { map, showBase, showOverlays } = createBaseMap(mapEl, settings.base, (base) =>
+  update({ base }),
+);
 
 function update(patch: Partial<CampingSettings>): void {
   settings = withPatch(settings, patch);
@@ -65,7 +68,6 @@ const panel = createPanel(app, settings, {
   },
   onViewChange(patch) {
     update(patch);
-    if (patch.base) showBase(settings.base);
     if (patch.overlays) showOverlays(settings.overlays);
     if (patch.opacity !== undefined) overlay?.setOpacity(settings.opacity);
     if (patch.showDrinking !== undefined) showDrinkingSources();
@@ -77,6 +79,7 @@ const panel = createPanel(app, settings, {
   },
   onSpotSelect: focusSpot,
   onLocate: locate,
+  onOpenChange: (panelOpen) => update({ panelOpen }),
 });
 panel.syncFrom(settings);
 showBase(settings.base);
@@ -84,10 +87,12 @@ showOverlays(settings.overlays);
 panel.setLegend(settings.layer, settings.palette);
 
 const nominatim = new NominatimClient(undefined, undefined, undefined, 'ch');
+const suggester = new SwisstopoSuggester();
 createSearchBar(
   topBar,
   (query) => nominatim.search(query),
   (place) => map.setView([place.lat, place.lon], Math.max(place.zoom, 12)),
+  (query, signal) => suggester.suggest(query, signal),
 );
 
 // --- choosing a spot and analysing -------------------------------------------------------
@@ -178,7 +183,10 @@ function onResult(res: AnalysisResult): void {
   showDrinkingSources();
   rescore();
   drawOutline(true);
-  if (window.matchMedia('(max-width: 640px)').matches) panel.setOpen(false);
+  if (window.matchMedia('(max-width: 640px)').matches) {
+    panel.setOpen(false);
+    update({ panelOpen: false });
+  }
 }
 
 // --- scoring, layers, markers ------------------------------------------------------------
@@ -313,6 +321,45 @@ function showDrinkingSources(): void {
       .addTo(drinkingLayer);
   }
 }
+
+// --- hover readout (desktop) --------------------------------------------------------------
+
+/** Shows why the ground under the mouse scores as it does: the numbers behind the heatmap. */
+function setupHoverReadout(): void {
+  if (!window.matchMedia('(hover: hover)').matches) return;
+  const readout = document.createElement('div');
+  readout.className = 'cell-readout';
+  readout.hidden = true;
+  mapEl.append(readout);
+  let frame = 0;
+  map.on('mousemove', (e: L.LeafletMouseEvent) => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      const text = result ? readoutText(e.latlng) : null;
+      readout.hidden = text === null;
+      if (text === null) return;
+      readout.textContent = text;
+      readout.style.transform = `translate(${e.containerPoint.x + 16}px, ${e.containerPoint.y + 16}px)`;
+    });
+  });
+  map.on('mouseout', () => {
+    cancelAnimationFrame(frame);
+    readout.hidden = true;
+  });
+}
+
+function readoutText(at: L.LatLng): string | null {
+  const g = result!.geometry;
+  const p = wgs84ToLv95(at.lat, at.lng);
+  const col = Math.floor((p.e - g.e0) / g.cell);
+  const row = Math.floor((g.n0 - p.n) / g.cell);
+  if (col < 0 || row < 0 || col >= g.width || row >= g.height) return null;
+  const i = row * g.width + col;
+  if (!score || Number.isNaN(score[i]!)) return null;
+  const rough = `${result!.roughness[i]!.toFixed(2)} m rough`;
+  return `Score ${Math.round(score[i]! * 100)} %, ${describeCell(result!, col, row)}, ${rough}`;
+}
+setupHoverReadout();
 
 // --- location, URL, clicks ---------------------------------------------------------------
 

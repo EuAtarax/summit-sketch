@@ -1,5 +1,5 @@
 import type { SuitabilityParams } from './analysis';
-import { checkRow, el, field, section, selectOf, sliderRow } from './dom';
+import { checkRow, el, field, group, section, selectOf, sliderRow, tabs } from './dom';
 import { LAYERS, type LayerId } from './heatmap';
 import { OVERLAYS } from './overlays';
 import { PALETTES, paletteGradientCss, type PaletteId } from './palettes';
@@ -13,12 +13,11 @@ import {
   NEARBY_CONTROLS,
   SUITABILITY_CONTROLS,
   type AreaKm,
-  type BaseMapId,
   type CampingSettings,
 } from './settings';
 
 type ViewPatch = Partial<
-  Pick<CampingSettings, 'layer' | 'palette' | 'opacity' | 'base' | 'overlays' | 'showDrinking'>
+  Pick<CampingSettings, 'layer' | 'palette' | 'opacity' | 'overlays' | 'showDrinking'>
 >;
 type ModelPatch = Partial<Pick<CampingSettings, 'suitability' | 'nearby' | 'hideProtected'>>;
 
@@ -31,6 +30,8 @@ export interface PanelHandlers {
   onModelChange(patch: ModelPatch): void;
   onSpotSelect(rank: number): void;
   onLocate(): void;
+  /** The user opened or closed the panel with the menu button (persisted by the caller). */
+  onOpenChange(open: boolean): void;
 }
 
 export interface Panel {
@@ -49,14 +50,16 @@ export interface Panel {
   syncFrom(settings: CampingSettings): void;
 }
 
+/** Best spots shown in the chip while the panel is closed. */
+const CHIP_SPOTS = 3;
 const NO_SPOTS = 'Choose a spot on the map to see the best places around it.';
 const NO_AREAS = 'No protected areas from the federal inventories here.';
 
-/** The "Tune the pitch" section: one slider per threshold, the lake rule and a reset button. */
+/** The "Tune the pitch" section: one slider per threshold, and a reset button. */
 function pitchSection(
   initial: SuitabilityParams,
   onChange: (params: SuitabilityParams) => void,
-): HTMLDetailsElement {
+): HTMLElement {
   let params = initial;
   const sliders = new Map<keyof SuitabilityParams, ReturnType<typeof sliderRow>>();
   const rows = SUITABILITY_CONTROLS.map((c) => {
@@ -67,12 +70,6 @@ function pitchSection(
     sliders.set(c.key, row);
     return row.node;
   });
-  const water = checkRow(
-    'Rule out lakes',
-    initial.excludeWater,
-    (on) => onChange((params = { ...params, excludeWater: on })),
-    'Lakes are perfectly flat in the terrain data, so they would otherwise look ideal.',
-  );
   const reset = el('button', {
     type: 'button',
     className: 'button secondary',
@@ -81,10 +78,9 @@ function pitchSection(
   reset.onclick = () => {
     params = DEFAULT_SETTINGS.suitability;
     for (const [key, row] of sliders) row.set(params[key] as number);
-    water.input.checked = params.excludeWater;
     onChange(params);
   };
-  return section('Tune the pitch', false, ...rows, water.node, reset);
+  return group('Tune the pitch', ...rows, reset);
 }
 
 /** The "Near trails and water" section: a switch and a distance for each preference. */
@@ -93,7 +89,7 @@ function nearbySection(
   showDrinking: boolean,
   onNearby: (nearby: NearbyParams) => void,
   onDrinking: (show: boolean) => void,
-): HTMLDetailsElement {
+): HTMLElement {
   let nearby = initial;
   const rows = NEARBY_CONTROLS.map((c) => {
     const toggle = checkRow(c.label, initial[c.key].enabled, (enabled) => {
@@ -118,17 +114,16 @@ function nearbySection(
     return el('div', { className: 'nearby' }, toggle.node, slider.node);
   });
   const markers = checkRow('Show drinking-water sources on the map', showDrinking, onDrinking);
-  return section('Near trails and water', false, ...rows, markers.node);
+  return group('Near trails and water', ...rows, markers.node);
 }
 
-/** The overlays section: base map choice and checkboxes grouped by kind. */
-function mapSection(
+/** The overlays section: checkboxes for trails and protected areas, grouped by kind. */
+function overlaysSection(
   initial: CampingSettings,
-  onBase: (base: BaseMapId) => void,
   onOverlays: (ids: string[]) => void,
-): HTMLDetailsElement {
+): HTMLElement {
   const enabled = new Set(initial.overlays);
-  const group = (kind: 'paths' | 'protected', title: string) =>
+  const overlayGroup = (kind: 'paths' | 'protected', title: string) =>
     el(
       'fieldset',
       { className: 'overlay-group' },
@@ -147,20 +142,10 @@ function mapSection(
           ).node,
       ),
     );
-  const base = selectOf<BaseMapId>(
-    [
-      { value: 'map', label: 'National map' },
-      { value: 'aerial', label: 'Aerial image' },
-    ],
-    initial.base,
-    onBase,
-  );
-  return section(
-    'Map and overlays',
-    false,
-    field('Base map', base),
-    group('paths', 'Hiking'),
-    group('protected', 'Protected areas (check the rules that apply)'),
+  return group(
+    'Overlays',
+    overlayGroup('paths', 'Hiking'),
+    overlayGroup('protected', 'Protected areas (check the rules that apply)'),
   );
 }
 
@@ -204,7 +189,7 @@ export function createPanel(
 
   // Results.
   const spotList = el('ol', { className: 'spot-list' });
-  const spots = section('Best spots here', true, spotList);
+  const spots = group('Best spots here', spotList);
   const areaList = el('ul', { className: 'area-list' });
   const hide = checkRow(
     'Hide ground where a protection is in force',
@@ -255,59 +240,87 @@ export function createPanel(
     status,
     warnings,
     legend,
-    panorama,
-    locate,
-    spots,
-    areas,
-    section(
-      'Area and heatmap',
-      true,
-      field('Area size', area, 'The square around the spot you tap.'),
-      canopy.node,
-      field('Heatmap', layer),
-      field('Colours', palette),
-      field('Opacity', opacity),
-    ),
-    pitchSection(initial.suitability, (suitability) => handlers.onModelChange({ suitability })),
-    nearbySection(
-      initial.nearby,
-      initial.showDrinking,
-      (nearby) => handlers.onModelChange({ nearby }),
-      (showDrinking) => handlers.onViewChange({ showDrinking }),
-    ),
-    mapSection(
-      initial,
-      (base) => handlers.onViewChange({ base }),
-      (overlays) => handlers.onViewChange({ overlays }),
-    ),
+    tabs([
+      {
+        label: 'Spots',
+        content: el('div', { className: 'tab-body' }, spots, areas, panorama, locate),
+      },
+      {
+        label: 'Tune',
+        content: el(
+          'div',
+          { className: 'tab-body' },
+          pitchSection(initial.suitability, (suitability) =>
+            handlers.onModelChange({ suitability }),
+          ),
+          nearbySection(
+            initial.nearby,
+            initial.showDrinking,
+            (nearby) => handlers.onModelChange({ nearby }),
+            (showDrinking) => handlers.onViewChange({ showDrinking }),
+          ),
+        ),
+      },
+      {
+        label: 'Map',
+        content: el(
+          'div',
+          { className: 'tab-body' },
+          group(
+            'Area and heatmap',
+            field('Area size', area, 'The square around the spot you tap.'),
+            canopy.node,
+            field('Heatmap', layer),
+            field('Colours', palette),
+            field('Opacity', opacity),
+          ),
+          overlaysSection(initial, (overlays) => handlers.onViewChange({ overlays })),
+        ),
+      },
+    ]),
   );
 
   const toggle = el('button', {
     type: 'button',
     className: 'panel-toggle',
-    textContent: 'Options',
+    textContent: '☰',
   });
-  toggle.setAttribute('aria-expanded', 'true');
+  toggle.setAttribute('aria-label', 'Options');
+  toggle.setAttribute('aria-expanded', 'false');
 
-  // While the panel is closed, a chip at the bottom keeps the result and the legend in sight.
+  // While the panel is closed, a chip at the bottom keeps the result, the legend and the best
+  // spots in sight.
   const chipText = el('span');
   const chipBar = el('div', { className: 'legend-bar' });
-  const chip = el('button', { type: 'button', className: 'status-chip' }, chipText, chipBar);
-  chip.setAttribute('aria-label', 'Result summary. Open the options');
+  const chipMain = el('button', { type: 'button', className: 'chip-main' }, chipText, chipBar);
+  chipMain.setAttribute('aria-label', 'Result summary. Open the options');
+  const chipSpots = el('ol', { className: 'chip-spots' });
+  const chip = el('div', { className: 'status-chip' }, chipMain, chipSpots);
   chip.hidden = true;
-  chip.onclick = () => setOpen(true);
 
   const setOpen = (open: boolean) => {
     body.hidden = !open;
     chip.hidden = open;
     toggle.setAttribute('aria-expanded', String(open));
   };
-  toggle.onclick = () => setOpen(body.hidden !== false);
+  const userSetOpen = (open: boolean) => {
+    setOpen(open);
+    handlers.onOpenChange(open);
+  };
+  chipMain.onclick = () => userSetOpen(true);
+  toggle.onclick = () => userSetOpen(body.hidden !== false);
 
   parent.append(toggle, body, chip);
-  setOpen(!matchMedia('(max-width: 640px)').matches);
+  setOpen(initial.panelOpen);
 
   const setSpots: Panel['setSpots'] = (items, emptyText = NO_SPOTS) => {
+    chipSpots.replaceChildren(
+      ...items.slice(0, CHIP_SPOTS).map((s) => {
+        const button = el('button', { type: 'button', textContent: s.title });
+        button.onclick = () => handlers.onSpotSelect(s.rank);
+        return el('li', {}, button);
+      }),
+    );
     if (items.length === 0)
       return spotList.replaceChildren(el('li', { className: 'empty', textContent: emptyText }));
     spotList.replaceChildren(

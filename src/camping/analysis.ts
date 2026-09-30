@@ -135,8 +135,6 @@ export interface SuitabilityParams {
   canopyMaxM: number;
   /** A pitch needs good ground this many cells around it (0 = one cell, 1 = 3 x 3 cells). */
   patchRadiusCells: number;
-  /** Rule out lakes and other perfectly flat surfaces (see flatSurfaceMask). */
-  excludeWater: boolean;
 }
 
 /** Recommended defaults (see the explanations in the settings panel). */
@@ -148,7 +146,6 @@ export const DEFAULT_SUITABILITY: SuitabilityParams = {
   canopyOkM: 0.5,
   canopyMaxM: 3,
   patchRadiusCells: 1,
-  excludeWater: true,
 };
 
 /**
@@ -186,6 +183,28 @@ export function flatSurfaceMask(
 }
 
 /**
+ * Grows the marked (1) cells of a mask by `radius` cells in every direction (square window), so
+ * the shore of a lake is ruled out along with the lake itself. Other cells keep their value.
+ */
+export function dilateMask(
+  mask: Float32Array,
+  width: number,
+  height: number,
+  radius: number,
+): Float32Array {
+  const out = Float32Array.from(mask);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (mask[y * width + x] !== 1) continue;
+      for (let yy = Math.max(0, y - radius); yy <= Math.min(height - 1, y + radius); yy++)
+        for (let xx = Math.max(0, x - radius); xx <= Math.min(width - 1, x + radius); xx++)
+          out[yy * width + xx] = 1;
+    }
+  }
+  return out;
+}
+
+/**
  * Pitch suitability 0..1 per cell: gentle slope, smooth ground and (when known) no tall
  * vegetation, multiplied so that any one failing criterion rules the cell out.
  */
@@ -202,7 +221,7 @@ export function pitchSuitability(
       out[i] = Number.NaN;
       continue;
     }
-    if (s.excludeWater && water && water[i] === 1) {
+    if (water && water[i] === 1) {
       out[i] = 0;
       continue;
     }

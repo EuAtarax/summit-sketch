@@ -99,6 +99,7 @@ describe('pickSpots', () => {
         [10, 150, 8, 0.95],
       ]),
       G,
+      { minSeparationM: 150 },
     );
     expect(spots.map((s) => s.rank)).toEqual([1, 2, 3]);
     expect(spots.map((s) => s.score)).toEqual([
@@ -125,8 +126,17 @@ describe('pickSpots', () => {
       [120, 120, 8, 0.8],
       [60, 60, 8, 0.8],
     ]);
-    expect(pickSpots(grid, G)).toHaveLength(2);
+    expect(pickSpots(grid, G, { minSeparationM: 150 })).toHaveLength(2);
     expect(pickSpots(grid, G, { count: 1 })).toHaveLength(1);
+  });
+
+  it('suggests three spots at least 300 m apart by default', () => {
+    const wide = { e0: 0, n0: 2000, cell: 2, width: 1000, height: 1000 };
+    const grid = new Float32Array(wide.width * wide.height);
+    for (const col of [10, 100, 200, 300, 400]) grid[500 * wide.width + col] = 0.9;
+    const spots = pickSpots(grid, wide);
+    expect(spots).toHaveLength(3);
+    expect(spots[1]!.e - spots[0]!.e).toBeGreaterThanOrEqual(300);
   });
 
   it('reports the LV95 position of the cell center', () => {
