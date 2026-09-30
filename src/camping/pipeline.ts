@@ -1,13 +1,6 @@
 import { createIdbCache, type Cache } from '../cache/idbCache';
 import type { BBox } from '../geo/bbox';
-import {
-  dilateMask,
-  downsampleMean,
-  flatSurfaceMask,
-  objectHeight,
-  roughness,
-  slopeDegrees,
-} from './analysis';
+import { dilateMask, flatSurfaceMask, vegetationHeight, roughness, slopeDegrees } from './analysis';
 import type { FetchFn } from '../net/fetch';
 import { wgs84ToLv95 } from './lv95';
 import { fetchFeatures, type DrinkingSource, type LatLon, type OsmFeatures } from './osm';
@@ -201,8 +194,7 @@ export async function runAnalysis(
       (done, total) => onProgress({ stage: 'surface', done, total }),
       fetchFn,
     );
-    const coarse = downsampleMean(dsm.data, dsm.width, dsm.height, cell / DSM_05M.gsd);
-    canopy = objectHeight(coarse.data, dtm.data);
+    canopy = vegetationHeight(dsm.data, dtm.data, width, height, cell / DSM_05M.gsd);
   }
 
   const analysisDone = performance.now();

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  downsampleMean,
-  objectHeight,
+  vegetationHeight,
   patchMinimum,
   pitchSuitability,
   roughness,
@@ -86,24 +85,48 @@ describe('roughness', () => {
   });
 });
 
-describe('downsampleMean and objectHeight', () => {
-  it('averages blocks', () => {
-    const d = downsampleMean(
-      Float32Array.from([1, 3, 5, 7, 2, 4, 6, 8, 0, 0, 0, 0, 0, 0, 0, 0]),
-      4,
-      4,
-      2,
+describe('vegetationHeight', () => {
+  // A 4 x 4 cell terrain (2 m) and its 16 x 16 surface (0.5 m), factor 4.
+  const W = 4;
+  const F = 4;
+  const flatTerrain = new Float32Array(W * W).fill(100);
+  const surfaceWith = (set: (x: number, y: number) => number) =>
+    Float32Array.from({ length: (W * F) ** 2 }, (_, i) =>
+      set(i % (W * F), Math.floor(i / (W * F))),
     );
-    expect(d.width).toBe(2);
-    expect(Array.from(d.data)).toEqual([2.5, 6.5, 0, 0]);
+
+  it('keeps a small tree crown at full height instead of averaging it away', () => {
+    // A 1 x 1 m crown (2 x 2 pixels) of 10 m in cell (1, 1).
+    const surface = surfaceWith((x, y) => (x >= 5 && x <= 6 && y >= 5 && y <= 6 ? 110 : 100));
+    const h = vegetationHeight(surface, flatTerrain, W, W, F);
+    expect(h[1 * W + 1]).toBeCloseTo(10, 5);
+    expect(h[0]).toBe(0);
   });
 
-  it('measures height above the ground and never goes negative', () => {
-    expect(
-      Array.from(
-        objectHeight(Float32Array.from([105, 99, 100]), Float32Array.from([100, 100, 100])),
-      ),
-    ).toEqual([5, 0, 0]);
+  it('ignores a single-pixel spike, and never goes negative', () => {
+    const surface = surfaceWith((x, y) => (x === 5 && y === 5 ? 120 : y > 12 ? 99 : 100));
+    const h = vegetationHeight(surface, flatTerrain, W, W, F);
+    expect(h[1 * W + 1]).toBe(0);
+    expect(h[3 * W + 3]).toBe(0);
+  });
+
+  it('reads a bare slope as bare, thanks to the interpolated ground', () => {
+    // Ground rising 1 m per 2 m cell to the east; the surface follows it exactly.
+    const terrain = Float32Array.from({ length: W * W }, (_, i) => 100 + (i % W));
+    const surface = surfaceWith((x) => 100 + (x + 0.5) / F - 0.5);
+    const h = vegetationHeight(surface, terrain, W, W, F);
+    for (const v of h.subarray(W, 2 * W)) expect(v).toBeLessThan(0.3);
+  });
+
+  it('is NaN where the surface has no data', () => {
+    const h = vegetationHeight(
+      new Float32Array((W * F) ** 2).fill(Number.NaN),
+      flatTerrain,
+      W,
+      W,
+      F,
+    );
+    expect(Number.isNaN(h[5]!)).toBe(true);
   });
 });
 

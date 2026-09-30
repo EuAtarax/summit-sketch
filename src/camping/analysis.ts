@@ -81,33 +81,65 @@ export function roughness(
   return out;
 }
 
-/** Mean of factor x factor blocks (NaN if any cell of a block is NaN): 0.5 m to 2 m, e.g. */
-export function downsampleMean(
-  data: Float32Array,
+/**
+ * Vegetation and object height per terrain cell from a finer surface model: for each of the
+ * `factor` x `factor` surface pixels in a cell, its height above the terrain (interpolated
+ * bilinearly, so a slope does not read as vegetation), and of those the `rank`-th highest
+ * (0 = the highest). The default, the second highest, keeps a tree crown that covers a few
+ * pixels at full height (an average would shrink a 1 m crown to a quarter) while ignoring a
+ * single-pixel spike such as a pole or noise. NaN where the surface has no data.
+ */
+export function vegetationHeight(
+  surface: Float32Array,
+  terrain: Float32Array,
   width: number,
   height: number,
   factor: number,
-): { data: Float32Array; width: number; height: number } {
-  const w = Math.floor(width / factor);
-  const h = Math.floor(height / factor);
-  const out = new Float32Array(w * h);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let sum = 0;
+  rank = 1,
+): Float32Array {
+  const sw = width * factor;
+  const out = new Float32Array(width * height);
+  const heights = new Float64Array(factor * factor);
+  const ground = (u: number, v: number): number => {
+    // Bilinear on terrain cell centers, u and v in cell units. The outer half cell lies beyond
+    // the last centers: continue the slope there (extrapolate) rather than flatten it.
+    const at = (x: number, y: number) => terrain[y * width + x]!;
+    if (width < 2 || height < 2) {
+      return at(
+        Math.min(width - 1, Math.max(0, Math.round(u))),
+        Math.min(height - 1, Math.max(0, Math.round(v))),
+      );
+    }
+    const x0 = Math.min(width - 2, Math.max(0, Math.floor(u)));
+    const y0 = Math.min(height - 2, Math.max(0, Math.floor(v)));
+    const fx = u - x0;
+    const fy = v - y0;
+    return (
+      (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) +
+      (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy
+    );
+  };
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let n = 0;
       for (let dy = 0; dy < factor; dy++) {
-        for (let dx = 0; dx < factor; dx++)
-          sum += data[(y * factor + dy) * width + x * factor + dx]!;
+        for (let dx = 0; dx < factor; dx++) {
+          const sx = x * factor + dx;
+          const sy = y * factor + dy;
+          const top = surface[sy * sw + sx]!;
+          const base = ground((sx + 0.5) / factor - 0.5, (sy + 0.5) / factor - 0.5);
+          const h = top - base;
+          if (h === h) heights[n++] = Math.max(0, h);
+        }
       }
-      out[y * w + x] = sum / (factor * factor);
+      if (n === 0) {
+        out[y * width + x] = Number.NaN;
+        continue;
+      }
+      const values = heights.subarray(0, n).sort().reverse();
+      out[y * width + x] = values[Math.min(rank, n - 1)]!;
     }
   }
-  return { data: out, width: w, height: h };
-}
-
-/** Surface minus terrain: height of trees, shrubs, boulders and buildings above the ground. */
-export function objectHeight(surface: Float32Array, terrain: Float32Array): Float32Array {
-  const out = new Float32Array(terrain.length);
-  for (let i = 0; i < out.length; i++) out[i] = Math.max(0, surface[i]! - terrain[i]!);
   return out;
 }
 
