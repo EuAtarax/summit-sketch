@@ -3,6 +3,7 @@ import { lv95ToWgs84, wgs84ToLv95 } from './lv95';
 import {
   fetchProtectedAreas,
   identifyUrl,
+  hidesGround,
   isInForce,
   parseProtectedAreas,
   protectionIndex,
@@ -97,11 +98,36 @@ describe('parseProtectedAreas', () => {
     });
   });
 
-  it('recognizes the Swiss National Park inside the parks layer', () => {
-    expect(areas.find((a) => a.layer.includes('paerke'))!.kind).toBe('Swiss National Park');
+  it('recognizes the Swiss National Park inside the parks layer, and it restricts', () => {
+    const park = areas.find((a) => a.layer.includes('paerke'))!;
+    expect(park.kind).toBe('Swiss National Park');
+    expect(hidesGround(park)).toBe(true);
   });
 
-  it('marks what is in force on the date and lists the out-of-season areas first', () => {
+  it('lists regional nature parks and moorland landscapes without letting them hide ground', () => {
+    const answer = {
+      results: [
+        {
+          layerBodId: 'ch.bafu.schutzgebiete-paerke_nationaler_bedeutung',
+          geometry: { type: 'Polygon', coordinates: [square(46.6, 9.6)] },
+          properties: { name: 'Parc Ela', kategorie: 'RN' },
+        },
+        {
+          layerBodId: 'ch.bafu.bundesinventare-moorlandschaften',
+          geometry: { type: 'Polygon', coordinates: [square(46.6, 9.6)] },
+          properties: { objname: 'Moor' },
+        },
+      ],
+    };
+    const listed = parseProtectedAreas(answer as never, d('2026-07-15'));
+    expect(listed.map((a) => a.kind)).toEqual(['Nature park', 'Moorland landscape']);
+    for (const a of listed) {
+      expect(a.inForce).toBe(true); // no period: applies all year
+      expect(hidesGround(a)).toBe(false);
+    }
+  });
+
+  it('marks what is in force on the date and lists the out-of-season restrictions first', () => {
     expect(areas.find((a) => a.kind === 'Wildlife quiet zone')!.inForce).toBe(false); // winter zone in July
     expect(areas.find((a) => a.name === 'Schilt')!.inForce).toBe(true);
     expect(areas[0]!.inForce).toBe(false);
@@ -130,6 +156,26 @@ describe('protectionIndex', () => {
     expect(at(0, 0)).toBe(gameReserve); // both cover the middle; the one in force wins
     expect(at(400, 0)).toBe(zone); // only the winter zone reaches here
     expect(at(590, 0)).toBe(0); // outside both
+  });
+
+  it('lets a restriction in force win over a large listed-only park around it', () => {
+    const answer = {
+      results: [
+        ANSWER.results[2]!, // the game reserve, first in the answer
+        {
+          layerBodId: 'ch.bafu.schutzgebiete-paerke_nationaler_bedeutung',
+          geometry: { type: 'Polygon', coordinates: [square(46.99, 9.03)] },
+          properties: { name: 'Regionalpark', kategorie: 'RN' },
+        },
+      ],
+    };
+    const areas = parseProtectedAreas(answer as never, d('2026-07-15'));
+    const c = wgs84ToLv95(46.99, 9.03);
+    const g = { e0: c.e - 600, n0: c.n + 600, cell: 4, width: 300, height: 300 };
+    const index = protectionIndex(areas, g);
+    const middle = index[150 * 300 + 150]!;
+    expect(areas[middle - 1]!.name).toBe('Schilt');
+    expect(areas[index[150 * 300 + 250]! - 1]!.name).toBe('Regionalpark'); // park only
   });
 });
 

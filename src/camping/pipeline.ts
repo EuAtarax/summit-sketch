@@ -139,6 +139,7 @@ const areaInfo = (a: ProtectedArea): AreaInfo => ({
   rule: a.rule,
   period: a.period,
   inForce: a.inForce,
+  restricts: a.restricts,
 });
 
 /**

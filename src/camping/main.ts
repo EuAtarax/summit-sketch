@@ -16,6 +16,7 @@ import { isInSwitzerland, lv95ToWgs84, wgs84ToLv95 } from './lv95';
 import { DRINKING_LABELS } from './osm';
 import { createPanel } from './panel';
 import { createProgressBar, progressFraction } from './progress';
+import { hidesGround } from './protection';
 import type { AnalysisResult, Progress } from './pipeline';
 import { campScore, pickSpots, type Spot } from './scoring';
 import { loadSettings, saveSettings, withPatch, type CampingSettings } from './settings';
@@ -236,7 +237,7 @@ function rescore(): void {
         ? {
             protection: {
               index: result.protectionIndex,
-              inForce: result.areas.map((a) => a.inForce),
+              hides: result.areas.map(hidesGround),
             },
           }
         : {}),

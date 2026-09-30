@@ -172,9 +172,11 @@ function makeOpacity(initial: number, onInput: (opacity: number) => void): HTMLI
 }
 
 const areaText = (a: AreaInfo): string => {
-  const season = a.period
-    ? `${a.period}${a.inForce ? ' (in force today)' : ' (not in force today)'}`
-    : 'all year';
+  const season = !a.restricts
+    ? 'listed for information, hides nothing'
+    : a.period
+      ? `${a.period}${a.inForce ? ' (in force today)' : ' (not in force today)'}`
+      : 'all year';
   return [a.kind, season, a.rule].filter(Boolean).join(' | ');
 };
 
@@ -210,7 +212,7 @@ export function createPanel(
     'Hide ground where a protection is in force',
     initial.hideProtected,
     (hideProtected) => handlers.onModelChange({ hideProtected }),
-    'Protections that apply only in other seasons (like winter refuges in summer) are shown but do not hide anything. Always check the rules of the area yourself.',
+    'Protections that apply only in other seasons (like winter refuges in summer) are shown but do not hide anything, and neither do nature parks and moorland landscapes, which are large and listed for information. Always check the rules of the area yourself.',
   );
   const areas = section('Protected areas in this box', false, hide.node, areaList);
 

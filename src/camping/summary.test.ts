@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AnalysisResult } from './pipeline';
 import {
+  describeCell,
   describeSpot,
   formatMeters,
   formatSignedMeters,
@@ -32,6 +33,7 @@ function result(overrides: Partial<AnalysisResult> = {}): AnalysisResult {
         rule: null,
         period: '21.12. - 30.04.',
         inForce: false,
+        restricts: true,
       },
     ],
     warnings: [],
@@ -87,13 +89,14 @@ describe('describeSpot', () => {
 });
 
 describe('protectedLayer', () => {
-  it('marks protection in force as 2 and out of season as 1', () => {
-    const inForce = result({
-      areas: [
-        { layer: 'x', kind: 'Game reserve', name: 'A', rule: null, period: null, inForce: true },
-      ],
+  it('marks protection in force as 2, out of season or listed only as 1', () => {
+    const area = { layer: 'x', kind: 'Game reserve', name: 'A', rule: null, period: null };
+    const inForce = result({ areas: [{ ...area, inForce: true, restricts: true }] });
+    const park = result({
+      areas: [{ ...area, kind: 'Nature park', inForce: true, restricts: false }],
     });
     expect(protectedLayer(inForce)![7]).toBe(2);
+    expect(protectedLayer(park)![7]).toBe(1);
     expect(protectedLayer(result())![7]).toBe(1);
     expect(protectedLayer(result())![1]).toBe(0);
   });
@@ -116,5 +119,15 @@ describe('protectionAt and restrictionNotice', () => {
     const text = restrictionNotice(result().areas[0]!);
     expect(text).toBe('In Wildlife quiet zone: Chnuegrat (not in force today). Check local rules.');
     expect(restrictionNotice({ ...result().areas[0]!, inForce: true })).toMatch(/in force today/);
+  });
+
+  it('names a large listed-only area without a season', () => {
+    const park = { ...result().areas[0]!, kind: 'Nature park', name: 'Parc Ela', restricts: false };
+    expect(restrictionNotice({ ...park, inForce: true })).toBe(
+      'In Nature park: Parc Ela. Check local rules.',
+    );
+    const res = result({ areas: [{ ...park, inForce: true }] });
+    expect(describeCell(res, 7, 0)).toContain('in Nature park: Parc Ela');
+    expect(describeCell(res, 7, 0)).not.toContain('not in force');
   });
 });

@@ -9,18 +9,21 @@ const TIMEOUT_MS = 20_000;
 
 /**
  * Federal protection layers that the identify service can return as polygons, with the
- * plain name shown to people. (The Swiss National Park comes with the parks layer,
- * category SNP; its own layer has no identify table.)
+ * plain name shown to people and whether the area can restrict where a tent may go.
+ * Regional nature parks and moorland landscapes are large (hundreds of km2, villages
+ * included) and carry no rule of their own for camping, so they are listed but hide
+ * nothing; the other inventories are small, strict areas. (The Swiss National Park comes
+ * with the parks layer, category SNP, and does restrict; its own layer has no identify table.)
  */
-export const PROTECTION_LAYERS: Record<string, string> = {
-  'ch.bafu.wrz-wildruhezonen_portal': 'Wildlife quiet zone',
-  'ch.bafu.bundesinventare-jagdbanngebiete': 'Game reserve',
-  'ch.bafu.schutzgebiete-paerke_nationaler_bedeutung': 'Nature park',
-  'ch.bafu.bundesinventare-vogelreservate': 'Bird reserve',
-  'ch.bafu.bundesinventare-auen': 'Floodplain',
-  'ch.bafu.bundesinventare-moorlandschaften': 'Moorland landscape',
-  'ch.bafu.bundesinventare-hochmoore': 'Raised bog',
-  'ch.bafu.bundesinventare-flachmoore': 'Fen',
+export const PROTECTION_LAYERS: Record<string, { kind: string; restricts: boolean }> = {
+  'ch.bafu.wrz-wildruhezonen_portal': { kind: 'Wildlife quiet zone', restricts: true },
+  'ch.bafu.bundesinventare-jagdbanngebiete': { kind: 'Game reserve', restricts: true },
+  'ch.bafu.schutzgebiete-paerke_nationaler_bedeutung': { kind: 'Nature park', restricts: false },
+  'ch.bafu.bundesinventare-vogelreservate': { kind: 'Bird reserve', restricts: true },
+  'ch.bafu.bundesinventare-auen': { kind: 'Floodplain', restricts: true },
+  'ch.bafu.bundesinventare-moorlandschaften': { kind: 'Moorland landscape', restricts: false },
+  'ch.bafu.bundesinventare-hochmoore': { kind: 'Raised bog', restricts: true },
+  'ch.bafu.bundesinventare-flachmoore': { kind: 'Fen', restricts: true },
 };
 
 export interface ProtectedArea {
@@ -34,8 +37,17 @@ export interface ProtectedArea {
   period: string | null;
   /** True if the protection applies on the date the areas were fetched for. */
   inForce: boolean;
+  /** False for large areas that are listed for information only (see PROTECTION_LAYERS). */
+  restricts: boolean;
   polygons: Polygon[];
 }
+
+/** Whether an area takes ground out of the camp score today (when hiding is switched on). */
+export const hidesGround = (a: Pick<ProtectedArea, 'inForce' | 'restricts'>): boolean =>
+  a.restricts && a.inForce;
+
+/** Painting order: listed-only areas first, then restrictions out of season, then in force. */
+const paintRank = (a: ProtectedArea): number => (!a.restricts ? 0 : a.inForce ? 2 : 1);
 
 interface IdentifyResult {
   layerBodId: string;
@@ -93,8 +105,8 @@ function toPolygons(geometry: NonNullable<IdentifyResult['geometry']>): Polygon[
 
 /**
  * Turns an identify answer into protected areas. Lines (permitted paths inside wildlife
- * zones) are skipped. Areas whose protection is not in force on `date` come first, so
- * painting them in order lets the ones in force win where they overlap.
+ * zones) are skipped. The areas are sorted so that painting them in order lets the stricter
+ * one win where they overlap: a wildlife zone in force shows through the nature park around it.
  */
 export function parseProtectedAreas(
   json: { results?: IdentifyResult[] },
@@ -102,23 +114,25 @@ export function parseProtectedAreas(
 ): ProtectedArea[] {
   const areas: ProtectedArea[] = [];
   for (const r of json.results ?? []) {
-    const kindBase = PROTECTION_LAYERS[r.layerBodId];
-    if (!kindBase || !r.geometry) continue;
+    const def = PROTECTION_LAYERS[r.layerBodId];
+    if (!def || !r.geometry) continue;
     const polygons = toPolygons(r.geometry);
     if (polygons.length === 0) continue;
     const a = r.properties ?? r.attributes ?? {};
     const period = text(a.schutzzeit);
+    const nationalPark = text(a.kategorie) === 'SNP';
     areas.push({
       layer: r.layerBodId,
-      kind: text(a.kategorie) === 'SNP' ? 'Swiss National Park' : kindBase,
+      kind: nationalPark ? 'Swiss National Park' : def.kind,
       name: nameOf(a),
       rule: text(a.best_de) ?? text(a.typ_de),
       period,
       inForce: isInForce(period, date),
+      restricts: def.restricts || nationalPark,
       polygons,
     });
   }
-  return areas.sort((x, y) => Number(x.inForce) - Number(y.inForce));
+  return areas.sort((x, y) => paintRank(x) - paintRank(y));
 }
 
 export function identifyUrl(box: BBox): string {
@@ -147,7 +161,7 @@ export async function fetchProtectedAreas(
 
 /**
  * Per cell: 0 when no protected area covers it, otherwise the 1-based index into `areas` of
- * the area that covers it (one in force wins over one that is not).
+ * the area that covers it (later areas win, see parseProtectedAreas for the order).
  */
 export function protectionIndex(areas: readonly ProtectedArea[], g: GridGeometry): Uint8Array {
   const index = new Uint8Array(g.width * g.height);

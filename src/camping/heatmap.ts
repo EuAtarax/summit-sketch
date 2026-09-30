@@ -69,10 +69,10 @@ export const LAYERS: Record<LayerId, LayerDef> = {
     label: 'Protected areas',
     goodness: () => 0,
     alpha: () => 0,
-    // 1 = protected but not in force today (e.g. a winter refuge in summer), 2 = in force.
+    // 1 = flagged but hides nothing today (a winter refuge in summer, a nature park), 2 = in force.
     colorOf: (v) => (v === 2 ? [200, 30, 40, 150] : v === 1 ? [240, 150, 40, 120] : [0, 0, 0, 0]),
     legend: 'linear-gradient(90deg, rgb(240,150,40), rgb(200,30,40))',
-    worst: 'not in force today',
+    worst: 'flagged, hides nothing',
     best: 'in force today',
   },
 };
