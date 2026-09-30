@@ -53,7 +53,7 @@ export const PALETTES: Record<PaletteId, { label: string; colors: readonly Rgb[]
   },
 };
 
-export const DEFAULT_PALETTE: PaletteId = 'green';
+export const DEFAULT_PALETTE: PaletteId = 'magma';
 
 export function isPaletteId(value: unknown): value is PaletteId {
   return typeof value === 'string' && value in PALETTES;
