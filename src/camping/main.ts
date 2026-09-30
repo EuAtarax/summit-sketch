@@ -21,7 +21,8 @@ import type { SpotView } from './model';
 import { DRINKING_LABELS } from './osm';
 import { createPanel } from './panel';
 import type { Progress } from './pipeline';
-import { createProgressBar, progressFraction } from './progress';
+import { createProgressBar, progressFraction, shortStage } from './progress';
+import { createSpotProgress } from './spotProgress';
 import { loadSettings, saveSettings, withPatch, type CampingSettings } from './settings';
 import { NO_GOOD_SPOTS, restrictionNotice } from './summary';
 import { DTM_2M, windowBounds, windowCorners } from './terrain';
@@ -111,6 +112,7 @@ let marker: L.CircleMarker | null = null;
 let outline: L.Polygon | null = null;
 let overlay: L.ImageOverlay | null = null;
 const client = new AnalysisClient();
+const spotProgress = createSpotProgress(map);
 
 function selectSpot(lat: number, lon: number): void {
   if (!isInSwitzerland(lat, lon)) {
@@ -152,6 +154,8 @@ function drawOutline(solid: boolean): void {
     color: RED,
     weight: solid ? 1.5 : 2,
     dashArray: solid ? undefined : '6 6',
+    // While loading, the dashes march around the box (see camping.css).
+    className: solid ? 'analysis-outline' : 'analysis-outline loading',
     fill: false,
     interactive: false,
   }).addTo(map);
@@ -177,17 +181,20 @@ function startAnalysis(): void {
   drawOutline(false);
   panel.setStatus('Loading terrain...');
   progressBar.update(0.03);
+  spotProgress.start([spot.lat, spot.lon], 'Loading terrain');
   const { e, n, half } = analysisWindow();
   client
     .run({ e, n, halfSizeM: half, canopy: settings.canopy, date: Date.now() }, (p) => {
       panel.setStatus(describeProgress(p));
       progressBar.update(progressFraction(p));
+      spotProgress.update(shortStage(p), progressFraction(p));
     })
     .then(onResult)
     .catch((err: unknown) => {
       if (err instanceof SupersededError) return;
       console.error(err);
       progressBar.finish();
+      spotProgress.finish();
       say("Couldn't load terrain data. Check your connection and try again by tapping the map.");
     });
 }
@@ -200,6 +207,7 @@ function onResult(res: ResultSummary): void {
   refreshView();
   drawOutline(true);
   progressBar.finish();
+  spotProgress.finish();
   if (res.areaAtCenter) showToast(restrictionNotice(res.areaAtCenter));
   if (window.matchMedia('(max-width: 640px)').matches) {
     panel.setOpen(false);

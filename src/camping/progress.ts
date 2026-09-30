@@ -20,6 +20,20 @@ export function progressFraction(p: Progress): number | null {
   }
 }
 
+/** The stage in a few words, for the pill (the panel status keeps the longer wording). */
+export function shortStage(p: Progress): string {
+  switch (p.stage) {
+    case 'terrain':
+      return `Loading terrain ${p.done}/${p.total}`;
+    case 'surface':
+      return `Loading vegetation ${p.done}/${p.total}`;
+    case 'analysis':
+      return 'Analysing';
+    case 'features':
+      return 'Trails, water, protected areas';
+  }
+}
+
 export interface ProgressBar {
   /** A fraction of the way, or null for a running animation of unknown length. */
   update(fraction: number | null): void;
