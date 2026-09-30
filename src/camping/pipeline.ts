@@ -1,6 +1,13 @@
 import { createIdbCache, type Cache } from '../cache/idbCache';
 import type { BBox } from '../peaks/overpass';
-import { downsampleMean, flatSurfaceMask, objectHeight, roughness, slopeDegrees } from './analysis';
+import {
+  dilateMask,
+  downsampleMean,
+  flatSurfaceMask,
+  objectHeight,
+  roughness,
+  slopeDegrees,
+} from './analysis';
 import type { FetchFn } from './cog';
 import { wgs84ToLv95 } from './lv95';
 import { fetchFeatures, type DrinkingSource, type LatLon, type OsmFeatures } from './osm';
@@ -75,6 +82,8 @@ export interface AnalysisDeps {
 
 const OSM_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 const BOX_MARGIN_M = 100;
+/** Ground this close to a lake (2 cells, 4 m) is ruled out too, as a tent must not touch water. */
+const SHORE_BUFFER_CELLS = 2;
 
 export const OSM_UNAVAILABLE =
   'Trails, water and drinking water could not be loaded (the OpenStreetMap server is busy). The result ignores them.';
@@ -171,7 +180,12 @@ export async function runAnalysis(
   onProgress({ stage: 'analysis', done: 0, total: 1 });
   const slope = slopeDegrees(dtm.data, width, height, cell);
   const rough = roughness(dtm.data, width, height, cell);
-  const water = flatSurfaceMask(dtm.data, width, height);
+  const water = dilateMask(
+    flatSurfaceMask(dtm.data, width, height),
+    width,
+    height,
+    SHORE_BUFFER_CELLS,
+  );
 
   let canopy: Float32Array | undefined;
   if (params.canopy) {

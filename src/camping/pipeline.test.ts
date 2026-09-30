@@ -141,20 +141,16 @@ describe('runAnalysis', () => {
   });
 
   it('suggests the meadow, not the lake and not the flank', () => {
-    const score = (excludeWater: boolean) => {
-      const params = { ...DEFAULT_SUITABILITY, excludeWater };
-      return patchMinimum(
-        pitchSuitability(result.slope, result.roughness, undefined, params, result.water),
-        200,
-        200,
-        params.patchRadiusCells,
-      );
-    };
-    const strict = score(true);
+    const params = DEFAULT_SUITABILITY;
+    const strict = patchMinimum(
+      pitchSuitability(result.slope, result.roughness, undefined, params, result.water),
+      200,
+      200,
+      params.patchRadiusCells,
+    );
     expect(strict[cell(100, 30)]).toBeGreaterThan(0.95);
     expect(strict[cell(10, 20)]).toBe(0);
     expect(strict[cell(100, 170)]).toBe(0);
-    expect(score(false)[cell(10, 20)]).toBeGreaterThan(0.95);
   });
 
   it('measures the distance to the trail and to the drinking-water source', () => {

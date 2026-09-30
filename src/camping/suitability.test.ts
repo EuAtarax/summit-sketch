@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SUITABILITY,
+  dilateMask,
   flatSurfaceMask,
   patchMinimum,
   pitchSuitability,
@@ -63,10 +64,20 @@ describe('pitchSuitability with tunable parameters', () => {
     expect(one(4, { slopeOkDeg: 2, slopeMaxDeg: 4 })).toBe(0);
   });
 
-  it('rules out lakes only when asked to', () => {
+  it('always rules out lakes', () => {
     expect(one(0, {}, 1)).toBe(0);
-    expect(one(0, { excludeWater: false }, 1)).toBe(1);
     expect(one(0, {}, 0)).toBe(1);
+  });
+
+  it('grows a lake mask by the given radius and keeps the rest', () => {
+    const mask = new Float32Array(5 * 5);
+    mask[2 * 5 + 2] = 1;
+    mask[0] = Number.NaN;
+    const grown = dilateMask(mask, 5, 5, 1);
+    expect(grown[1 * 5 + 1]).toBe(1);
+    expect(grown[3 * 5 + 3]).toBe(1);
+    expect(grown[0]).toBeNaN();
+    expect(grown[4 * 5 + 4]).toBe(0);
   });
 });
 

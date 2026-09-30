@@ -52,7 +52,7 @@ export interface Panel {
 const NO_SPOTS = 'Choose a spot on the map to see the best places around it.';
 const NO_AREAS = 'No protected areas from the federal inventories here.';
 
-/** The "Tune the pitch" section: one slider per threshold, the lake rule and a reset button. */
+/** The "Tune the pitch" section: one slider per threshold, and a reset button. */
 function pitchSection(
   initial: SuitabilityParams,
   onChange: (params: SuitabilityParams) => void,
@@ -67,12 +67,6 @@ function pitchSection(
     sliders.set(c.key, row);
     return row.node;
   });
-  const water = checkRow(
-    'Rule out lakes',
-    initial.excludeWater,
-    (on) => onChange((params = { ...params, excludeWater: on })),
-    'Lakes are perfectly flat in the terrain data, so they would otherwise look ideal.',
-  );
   const reset = el('button', {
     type: 'button',
     className: 'button secondary',
@@ -81,10 +75,9 @@ function pitchSection(
   reset.onclick = () => {
     params = DEFAULT_SETTINGS.suitability;
     for (const [key, row] of sliders) row.set(params[key] as number);
-    water.input.checked = params.excludeWater;
     onChange(params);
   };
-  return section('Tune the pitch', false, ...rows, water.node, reset);
+  return section('Tune the pitch', false, ...rows, reset);
 }
 
 /** The "Near trails and water" section: a switch and a distance for each preference. */

@@ -56,7 +56,7 @@ export const DEFAULT_SETTINGS: CampingSettings = {
 
 /** What each pitch tunable is, its range and a short explanation (shown in the panel). */
 export const SUITABILITY_CONTROLS: readonly {
-  key: keyof Omit<SuitabilityParams, 'excludeWater'>;
+  key: keyof SuitabilityParams;
   label: string;
   unit: string;
   min: number;
@@ -170,8 +170,6 @@ export function sanitizeSuitability(raw: unknown): SuitabilityParams {
     canopyOkM,
     canopyMaxM: Math.max(num('canopyMaxM', 1, 8), canopyOkM + 0.5),
     patchRadiusCells: Math.round(num('patchRadiusCells', 0, 3)),
-    excludeWater:
-      typeof r.excludeWater === 'boolean' ? r.excludeWater : DEFAULT_SUITABILITY.excludeWater,
   };
 }
 

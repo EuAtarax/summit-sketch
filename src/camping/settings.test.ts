@@ -60,12 +60,6 @@ describe('sanitizeSuitability', () => {
     const p = sanitizeSuitability({ slopeOkDeg: 12, slopeMaxDeg: 5 });
     expect(p.slopeMaxDeg).toBeGreaterThan(p.slopeOkDeg);
   });
-
-  it('keeps the water rule a boolean, on by default', () => {
-    expect(sanitizeSuitability({}).excludeWater).toBe(true);
-    expect(sanitizeSuitability({ excludeWater: false }).excludeWater).toBe(false);
-    expect(sanitizeSuitability({ excludeWater: 'no' }).excludeWater).toBe(true);
-  });
 });
 
 describe('SUITABILITY_CONTROLS', () => {
