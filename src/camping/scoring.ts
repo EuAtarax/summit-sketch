@@ -109,7 +109,7 @@ export function pickSpots(
   g: GridGeometry,
   options: { count?: number; minSeparationM?: number; minScore?: number } = {},
 ): Spot[] {
-  const { count = 5, minSeparationM = 150, minScore = 0.5 } = options;
+  const { count = 3, minSeparationM = 300, minScore = 0.5 } = options;
   const block = Math.max(1, Math.round(BLOCK_M / g.cell));
   const candidates: { col: number; row: number; score: number }[] = [];
   for (let by = 0; by < g.height; by += block) {

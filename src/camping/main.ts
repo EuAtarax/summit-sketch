@@ -18,7 +18,7 @@ import { createPanel } from './panel';
 import type { AnalysisResult, Progress } from './pipeline';
 import { campScore, pickSpots, type Spot } from './scoring';
 import { loadSettings, saveSettings, withPatch, type CampingSettings } from './settings';
-import { describeSpot, NO_GOOD_SPOTS, protectedLayer, summarize } from './summary';
+import { describeCell, describeSpot, NO_GOOD_SPOTS, protectedLayer, summarize } from './summary';
 import { DTM_2M, windowBounds, windowCorners } from './terrain';
 
 reloadWhenUpdated();
@@ -321,6 +321,45 @@ function showDrinkingSources(): void {
       .addTo(drinkingLayer);
   }
 }
+
+// --- hover readout (desktop) --------------------------------------------------------------
+
+/** Shows why the ground under the mouse scores as it does: the numbers behind the heatmap. */
+function setupHoverReadout(): void {
+  if (!window.matchMedia('(hover: hover)').matches) return;
+  const readout = document.createElement('div');
+  readout.className = 'cell-readout';
+  readout.hidden = true;
+  mapEl.append(readout);
+  let frame = 0;
+  map.on('mousemove', (e: L.LeafletMouseEvent) => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      const text = result ? readoutText(e.latlng) : null;
+      readout.hidden = text === null;
+      if (text === null) return;
+      readout.textContent = text;
+      readout.style.transform = `translate(${e.containerPoint.x + 16}px, ${e.containerPoint.y + 16}px)`;
+    });
+  });
+  map.on('mouseout', () => {
+    cancelAnimationFrame(frame);
+    readout.hidden = true;
+  });
+}
+
+function readoutText(at: L.LatLng): string | null {
+  const g = result!.geometry;
+  const p = wgs84ToLv95(at.lat, at.lng);
+  const col = Math.floor((p.e - g.e0) / g.cell);
+  const row = Math.floor((g.n0 - p.n) / g.cell);
+  if (col < 0 || row < 0 || col >= g.width || row >= g.height) return null;
+  const i = row * g.width + col;
+  if (!score || Number.isNaN(score[i]!)) return null;
+  const rough = `${result!.roughness[i]!.toFixed(2)} m rough`;
+  return `Score ${Math.round(score[i]! * 100)} %, ${describeCell(result!, col, row)}, ${rough}`;
+}
+setupHoverReadout();
 
 // --- location, URL, clicks ---------------------------------------------------------------
 

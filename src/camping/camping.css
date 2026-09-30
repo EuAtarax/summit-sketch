@@ -320,6 +320,26 @@ body,
   border-top: 1px solid var(--hairline);
 }
 
+/* Hover readout: follows the mouse, never blocks clicks. */
+.cell-readout {
+  position: absolute;
+  z-index: 1000;
+  top: 0;
+  left: 0;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgb(31 42 51 / 0.92);
+  color: var(--snow);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.cell-readout[hidden] {
+  display: none;
+}
+
 /* Base-map switch above the zoom buttons: a preview of the map it switches to. */
 .base-switch {
   position: relative;

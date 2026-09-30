@@ -26,7 +26,16 @@ export function formatMeters(d: number): string {
  * water and drinking water (or that the box has none), and the protected area it lies in.
  */
 export function describeSpot(res: AnalysisResult, spot: Spot): SpotItem {
-  const i = spot.row * res.geometry.width + spot.col;
+  return {
+    rank: spot.rank,
+    title: `#${spot.rank}   score ${Math.round(spot.score * 100)} %`,
+    detail: describeCell(res, spot.col, spot.row),
+  };
+}
+
+/** The facts about one grid cell as a comma-separated line (see describeSpot). */
+export function describeCell(res: AnalysisResult, col: number, row: number): string {
+  const i = row * res.geometry.width + col;
   const near = (label: string, distances: Float32Array | undefined): string | null => {
     if (!distances) return null; // unknown (service unreachable): say nothing
     return Number.isFinite(distances[i]!)
@@ -42,11 +51,7 @@ export function describeSpot(res: AnalysisResult, spot: Spot): SpotItem {
     near('drinking water', res.drinkingDistance),
     area ? `in ${area.kind}: ${area.name}${area.inForce ? '' : ' (not in force today)'}` : null,
   ];
-  return {
-    rank: spot.rank,
-    title: `#${spot.rank}   score ${Math.round(spot.score * 100)} %`,
-    detail: parts.filter(Boolean).join(', '),
-  };
+  return parts.filter(Boolean).join(', ');
 }
 
 /** 0 = not protected, 1 = protected but not in force today, 2 = in force (for the map layer). */
