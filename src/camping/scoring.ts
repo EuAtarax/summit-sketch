@@ -20,6 +20,19 @@ export const FLOORS = { trail: 0.15, water: 0.5, drinking: 0.6 } as const;
 /** Ground this close to a path is the path itself, not a place to pitch a tent. */
 export const TRAIL_CLEARANCE_M = 8;
 const ON_TRAIL_FACTOR = 0.2;
+/**
+ * From here on a path is out of sight and earshot enough: closer ground scores lower, rising
+ * smoothly from the on-trail value at the clearance to full score here. Close to a trail is
+ * handy, but nobody wants hikers walking past the tent.
+ */
+export const TRAIL_QUIET_M = 60;
+
+/** The penalty for ground near a path: 0.2 on it, 1 from TRAIL_QUIET_M away. */
+export function trailQuietFactor(distanceM: number): number {
+  if (distanceM < TRAIL_CLEARANCE_M) return ON_TRAIL_FACTOR;
+  const t = Math.min(1, (distanceM - TRAIL_CLEARANCE_M) / (TRAIL_QUIET_M - TRAIL_CLEARANCE_M));
+  return ON_TRAIL_FACTOR + (1 - ON_TRAIL_FACTOR) * t * t * (3 - 2 * t);
+}
 
 /**
  * 1 up to `maxM`, then fading linearly to `floor` at twice that distance. Infinity (no such
@@ -78,8 +91,13 @@ export function campScore(
     }
     if (nearby.trail !== 0 && trailDistance) {
       const d = trailDistance[i]!;
+      // Near-only preference: reachable, but quiet. Far-only: the distance fade covers it.
       score *=
-        d < TRAIL_CLEARANCE_M ? ON_TRAIL_FACTOR : preferenceFactor(d, nearby.trail, FLOORS.trail);
+        nearby.trail > 0
+          ? trailQuietFactor(d) * nearnessFactor(d, nearby.trail, FLOORS.trail)
+          : d < TRAIL_CLEARANCE_M
+            ? ON_TRAIL_FACTOR
+            : distanceFactor(d, -nearby.trail, FLOORS.trail);
     }
     if (nearby.water !== 0 && waterDistance) {
       score *= preferenceFactor(waterDistance[i]!, nearby.water, FLOORS.water);

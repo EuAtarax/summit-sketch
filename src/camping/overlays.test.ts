@@ -4,8 +4,9 @@ import { CREDITS, OVERLAYS, overlayTileUrl } from './overlays';
 describe('OVERLAYS', () => {
   it('has unique ids and geo.admin layer ids', () => {
     expect(new Set(OVERLAYS.map((o) => o.id)).size).toBe(OVERLAYS.length);
-    expect(new Set(OVERLAYS.map((o) => o.layer)).size).toBe(OVERLAYS.length);
-    for (const o of OVERLAYS) expect(o.layer).toMatch(/^ch\.[a-z0-9]+\.[a-z0-9_.-]+$/);
+    const swiss = OVERLAYS.filter((o) => !o.url);
+    expect(new Set(swiss.map((o) => o.layer)).size).toBe(swiss.length);
+    for (const o of swiss) expect(o.layer).toMatch(/^ch\.[a-z0-9]+\.[a-z0-9_.-]+$/);
   });
 
   it('offers hiking trails and the main protected-area layers', () => {

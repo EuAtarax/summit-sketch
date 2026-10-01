@@ -15,12 +15,13 @@ import {
   type ViewUpdate,
 } from './analysisClient';
 import { createBaseMap, OVERLAY_PANE } from './baseMap';
+import { COUNTRIES, countryForIso, COVERED_NAMES, type CountryId } from './countries';
+import { crsOf } from './crs';
 import { LAYERS } from './heatmap';
-import { isInSwitzerland, wgs84ToLv95 } from './lv95';
 import type { SpotView } from './model';
 import { DRINKING_LABELS } from './osm';
 import { createPanel } from './panel';
-import type { Progress } from './pipeline';
+import { CELL_M, NO_TERRAIN, type Progress } from './pipeline';
 import { createProgressBar, progressFraction, shortStage } from './progress';
 import { createSpotProgress } from './spotProgress';
 import {
@@ -31,9 +32,9 @@ import {
   withPatch,
   type CampingSettings,
 } from './settings';
-import { lookupSwissPlace, rulesFor } from './rules';
+import { lookupPlace, rulesFor, type Place } from './rules';
 import { NO_GOOD_SPOTS, restrictionNotice } from './summary';
-import { DTM_2M, windowBounds, windowCorners } from './terrain';
+import { windowBounds, windowCorners } from './terrain';
 import { createToast } from './toast';
 
 reloadWhenUpdated();
@@ -51,7 +52,7 @@ const BLUE = '#1E6EC8';
 const params = new URLSearchParams(location.search);
 /** A shared link's area size and layer win over the stored ones. */
 let settings: CampingSettings = withPatch(loadSettings(), settingsFromShare(params));
-let spot: { lat: number; lon: number } | null = null;
+let spot: { lat: number; lon: number; country: CountryId } | null = null;
 /** The latest finished analysis; its grids stay in the worker. */
 let result: ResultSummary | null = null;
 let spots: SpotView[] = [];
@@ -67,8 +68,10 @@ app.append(mapEl, topBar);
 
 const progressBar = createProgressBar(app);
 
-const { map, showBase, showOverlays } = createBaseMap(mapEl, settings.base, (base) =>
-  update({ base }),
+const { map, showBase, showOverlays, setTerrainCredit } = createBaseMap(
+  mapEl,
+  settings.base,
+  (base) => update({ base }),
 );
 
 function update(patch: Partial<CampingSettings>): void {
@@ -99,14 +102,19 @@ const panel = createPanel(app, settings, {
   },
   onSpotSelect: focusSpot,
   onLocate: locate,
-  onOpenChange: (panelOpen) => update({ panelOpen }),
+  onOpenChange(panelOpen) {
+    update({ panelOpen });
+    // After the sheet is laid out, so its height is known.
+    if (panelOpen) requestAnimationFrame(keepSpotAboveSheet);
+  },
 });
 panel.syncFrom(settings);
 showBase(settings.base);
 showOverlays(settings.overlays);
 panel.setLegend(settings.layer, settings.palette);
 
-const nominatim = new NominatimClient(undefined, undefined, undefined, 'ch');
+// Search only where there is terrain data.
+const nominatim = new NominatimClient(undefined, undefined, undefined, 'ch,li,at,fr');
 const suggester = new SwisstopoSuggester();
 createSearchBar(
   topBar,
@@ -125,12 +133,27 @@ let overlay: L.ImageOverlay | null = null;
 const client = new AnalysisClient();
 const spotProgress = createSpotProgress(map);
 
-function selectSpot(lat: number, lon: number): void {
-  if (!isInSwitzerland(lat, lon)) {
-    say('That spot is outside Switzerland. This map covers Switzerland only.');
-    return;
-  }
-  spot = { lat, lon };
+/**
+ * On phones the options are a sheet over the lower part of the map: move the map so the chosen
+ * spot sits in the visible part above it, where heatmap changes can be watched.
+ */
+function keepSpotAboveSheet(): void {
+  if (!spot || !window.matchMedia('(max-width: 640px)').matches) return;
+  const sheet = document.querySelector<HTMLElement>('.panel');
+  if (!sheet || sheet.hidden) return;
+  const visible = map.getSize().y - sheet.offsetHeight;
+  const y = map.latLngToContainerPoint([spot.lat, spot.lon]).y;
+  if (y > visible - 40 || y < 70) map.panBy([0, y - visible / 2], { animate: true });
+}
+
+let selectSeq = 0;
+
+/**
+ * Chooses a spot: finds the country (and canton or region, for the rules), then analyses the
+ * area with that country's data. Places without data say which countries are covered.
+ */
+async function selectSpot(lat: number, lon: number): Promise<void> {
+  const mine = ++selectSeq;
   marker?.remove();
   marker = L.circleMarker([lat, lon], {
     radius: 7,
@@ -140,6 +163,33 @@ function selectSpot(lat: number, lon: number): void {
     fillOpacity: 1,
     interactive: false,
   }).addTo(map);
+  panel.setRules({ state: 'loading' });
+  spotProgress.start([lat, lon], 'Finding the place');
+
+  let place: Place | null = null;
+  let lookupFailed = false;
+  try {
+    place = await lookupPlace(lat, lon);
+  } catch (err) {
+    console.warn('Place lookup failed', err);
+    lookupFailed = true;
+  }
+  if (mine !== selectSeq) return; // a newer tap took over
+
+  const country = place ? countryForIso(place.country) : null;
+  if (!country) {
+    spotProgress.finish();
+    panel.setRules(lookupFailed ? { state: 'failed' } : { state: 'none' });
+    say(
+      lookupFailed
+        ? "Couldn't find out which country this is. Check your connection and tap again."
+        : `There is no terrain data for this place yet. The finder covers ${COVERED_NAMES}.`,
+    );
+    return;
+  }
+
+  spot = { lat, lon, country: country.id };
+  setTerrainCredit(country.terrainCredit);
   writeUrl();
   const href = new URL('panorama.html', location.href);
   href.search = new URLSearchParams({
@@ -149,38 +199,22 @@ function selectSpot(lat: number, lon: number): void {
     exact: '1',
   }).toString();
   panel.setPanoramaLink(href.toString());
-  showRules(lat, lon);
+  const placeName = [place!.commune, place!.regionName].filter(Boolean).join(', ') || null;
+  panel.setRules({ state: 'ready', placeName, entries: rulesFor(place!) });
   startAnalysis();
 }
 
-let rulesSeq = 0;
-/** Looks up canton and commune at the spot and shows the camping rules recorded for them. */
-function showRules(lat: number, lon: number): void {
-  const mine = ++rulesSeq;
-  panel.setRules({ state: 'loading' });
-  lookupSwissPlace(lat, lon)
-    .then((place) => {
-      if (mine !== rulesSeq) return;
-      const placeName = place ? [place.commune, place.regionName].filter(Boolean).join(', ') : null;
-      panel.setRules({ state: 'ready', placeName, entries: place ? rulesFor(place) : [] });
-    })
-    .catch((err: unknown) => {
-      if (mine !== rulesSeq) return;
-      console.warn('Place lookup failed', err);
-      panel.setRules({ state: 'failed' });
-    });
-}
-
 function analysisWindow(): { e: number; n: number; half: number } {
-  const p = wgs84ToLv95(spot!.lat, spot!.lon);
+  const crs = COUNTRIES[spot!.country].crs;
+  const p = crsOf({ crs }).forward(spot!.lat, spot!.lon);
   return { e: p.e, n: p.n, half: (settings.areaKm * 1000) / 2 };
 }
 
 function drawOutline(solid: boolean): void {
   const { e, n, half } = analysisWindow();
-  const b = windowBounds(e, n, half, DTM_2M.gsd);
+  const b = windowBounds(e, n, half, CELL_M);
   outline?.remove();
-  outline = L.polygon(windowCorners({ ...b, cell: DTM_2M.gsd }), {
+  outline = L.polygon(windowCorners({ ...b, cell: CELL_M, crs: COUNTRIES[spot!.country].crs }), {
     color: RED,
     weight: solid ? 1.5 : 2,
     dashArray: solid ? undefined : '6 6',
@@ -214,18 +248,32 @@ function startAnalysis(): void {
   spotProgress.start([spot.lat, spot.lon], 'Loading terrain');
   const { e, n, half } = analysisWindow();
   client
-    .run({ e, n, halfSizeM: half, canopy: settings.canopy, date: Date.now() }, (p) => {
-      panel.setStatus(describeProgress(p));
-      progressBar.update(progressFraction(p));
-      spotProgress.update(shortStage(p), progressFraction(p));
-    })
+    .run(
+      {
+        country: spot.country,
+        e,
+        n,
+        halfSizeM: half,
+        canopy: settings.canopy,
+        date: Date.now(),
+      },
+      (p) => {
+        panel.setStatus(describeProgress(p));
+        progressBar.update(progressFraction(p));
+        spotProgress.update(shortStage(p), progressFraction(p));
+      },
+    )
     .then(onResult)
     .catch((err: unknown) => {
       if (err instanceof SupersededError) return;
       console.error(err);
       progressBar.finish();
       spotProgress.finish();
-      say("Couldn't load terrain data. Check your connection and try again by tapping the map.");
+      say(
+        err instanceof Error && err.message === NO_TERRAIN
+          ? NO_TERRAIN
+          : "Couldn't load terrain data. Check your connection and try again by tapping the map.",
+      );
     });
 }
 
@@ -413,7 +461,7 @@ function locate(): void {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       map.setView([pos.coords.latitude, pos.coords.longitude], SPOT_ZOOM);
-      selectSpot(pos.coords.latitude, pos.coords.longitude);
+      void selectSpot(pos.coords.latitude, pos.coords.longitude);
     },
     () => say("Couldn't get your location. Allow location access, or tap the map."),
     { enableHighAccuracy: true, timeout: 15_000 },
@@ -437,15 +485,20 @@ map.on('click', (e: L.LeafletMouseEvent) => {
     say('Now tap the exact spot you want to check.');
     return;
   }
-  selectSpot(e.latlng.lat, e.latlng.lng);
+  void selectSpot(e.latlng.lat, e.latlng.lng);
 });
 
 // A shared link opens straight on its spot.
 const startLat = Number(params.get('lat'));
 const startLon = Number(params.get('lon'));
-if (params.has('lat') && params.has('lon') && isInSwitzerland(startLat, startLon)) {
+if (
+  params.has('lat') &&
+  params.has('lon') &&
+  Number.isFinite(startLat) &&
+  Number.isFinite(startLon)
+) {
   map.setView([startLat, startLon], SPOT_ZOOM);
-  selectSpot(startLat, startLon);
+  void selectSpot(startLat, startLon);
 }
 
 // Exposed for browser-driven checks.

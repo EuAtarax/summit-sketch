@@ -57,7 +57,7 @@ export interface Panel {
 /** Best spots shown in the chip while the panel is closed. */
 const CHIP_SPOTS = 3;
 const NO_SPOTS = 'Choose a spot on the map to see the best places around it.';
-const NO_AREAS = 'No protected areas from the federal inventories here.';
+const NO_AREAS = 'No protected areas found here.';
 
 /** The "Tune the pitch" section: one slider per threshold, and a reset button. */
 function pitchSection(
@@ -136,7 +136,7 @@ function overlaysSection(
   return group(
     'Overlays',
     overlayGroup('paths', 'Hiking'),
-    overlayGroup('protected', 'Protected areas (check the rules that apply)'),
+    overlayGroup('protected', 'Protected areas in Switzerland (check the rules that apply)'),
   );
 }
 
@@ -217,7 +217,7 @@ export function createPanel(
     'Hide ground where a protection is in force',
     initial.hideProtected,
     (hideProtected) => handlers.onModelChange({ hideProtected }),
-    'Protections that apply only in other seasons (like winter refuges in summer) are shown but do not hide anything, and neither do nature parks and moorland landscapes, which are large and listed for information. Always check the rules of the area yourself.',
+    'Protections that apply only in other seasons (like winter refuges in summer) are shown but do not hide anything, and neither do nature parks and moorland landscapes, which are large and listed for information. Outside Switzerland the areas come from the EU: strictly protected areas hide ground, Natura 2000 sites are listed. Always check the rules of the area yourself.',
   );
   const areas = section('Protected areas in this box', false, hide.node, areaList);
   const rulesBody = el('div', { className: 'rules' }, ...rulesNodes({ state: 'none' }));
@@ -255,7 +255,7 @@ export function createPanel(
     el('h1', { textContent: 'Summit Sketch' }),
     el('p', {
       className: 'tagline',
-      textContent: 'Find flat, quiet places to camp in Switzerland.',
+      textContent: 'Find flat, quiet places to camp in Switzerland, Austria and France.',
     }),
     status,
     warnings,

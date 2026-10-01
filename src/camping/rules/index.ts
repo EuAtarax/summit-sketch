@@ -1,4 +1,5 @@
 import type { FetchFn } from '../../net/fetch';
+import { isInSwitzerland } from '../lv95';
 import { AT_RULES } from './at';
 import { CH_RULES } from './ch';
 import type { RuleEntry, Stance } from './types';
@@ -107,4 +108,79 @@ export async function lookupSwissPlace(
   const year = now.getFullYear();
   const place = await ask(year);
   return place && !place.commune ? ((await ask(year - 1)) ?? place) : place;
+}
+
+const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse';
+/** Nominatim's usage policy: at most one request per second. */
+const NOMINATIM_GAP_MS = 1100;
+let lastNominatim = 0;
+const placeCache = new Map<string, Promise<Place | null>>();
+
+interface ReverseAnswer {
+  error?: string;
+  address?: Record<string, string>;
+}
+
+/** Country, region (ISO 3166-2) and commune from a Nominatim reverse answer. */
+export function parseReverse(json: ReverseAnswer): Place | null {
+  const a = json.address;
+  if (!a || typeof a.country_code !== 'string') return null;
+  const region = a['ISO3166-2-lvl4'] ?? a['ISO3166-2-lvl6'];
+  const commune = a.village ?? a.town ?? a.city ?? a.municipality;
+  return {
+    country: a.country_code.toUpperCase(),
+    ...(region ? { region } : {}),
+    ...(a.state ? { regionName: a.state } : {}),
+    ...(commune ? { commune } : {}),
+  };
+}
+
+/** The place at a point from OpenStreetMap (Nominatim), throttled and cached per ~100 m. */
+export function lookupNominatimPlace(
+  lat: number,
+  lon: number,
+  fetchFn: FetchFn = (u, init) => fetch(u, init),
+): Promise<Place | null> {
+  const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  let hit = placeCache.get(key);
+  if (!hit) {
+    hit = (async () => {
+      const wait = lastNominatim + NOMINATIM_GAP_MS - Date.now();
+      lastNominatim = Date.now() + Math.max(0, wait);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      const params = new URLSearchParams({
+        lat: String(lat),
+        lon: String(lon),
+        format: 'jsonv2',
+        zoom: '10',
+        addressdetails: '1',
+        'accept-language': 'en',
+      });
+      const res = await fetchFn(`${NOMINATIM_REVERSE}?${params}`, {
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) throw new Error(`Place lookup failed (HTTP ${res.status})`);
+      return parseReverse((await res.json()) as ReverseAnswer);
+    })();
+    placeCache.set(key, hit);
+    hit.catch(() => placeCache.delete(key));
+  }
+  return hit;
+}
+
+/**
+ * Where a spot is: in Switzerland canton and commune from geo.admin.ch (the names the rules use),
+ * elsewhere country and region from OpenStreetMap. Null over the sea or when unknown.
+ */
+export async function lookupPlace(
+  lat: number,
+  lon: number,
+  fetchFn?: FetchFn,
+  now?: Date,
+): Promise<Place | null> {
+  if (isInSwitzerland(lat, lon)) {
+    const swiss = await lookupSwissPlace(lat, lon, fetchFn, now).catch(() => null);
+    if (swiss) return swiss;
+  }
+  return lookupNominatimPlace(lat, lon, fetchFn);
 }

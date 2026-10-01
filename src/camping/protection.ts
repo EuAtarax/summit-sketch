@@ -49,6 +49,10 @@ export const hidesGround = (a: Pick<ProtectedArea, 'inForce' | 'restricts'>): bo
 /** Painting order: listed-only areas first, then restrictions out of season, then in force. */
 const paintRank = (a: ProtectedArea): number => (!a.restricts ? 0 : a.inForce ? 2 : 1);
 
+/** Sorts areas so that painting them in order lets the strictest win where they overlap. */
+export const sortForPainting = (areas: ProtectedArea[]): ProtectedArea[] =>
+  areas.sort((x, y) => paintRank(x) - paintRank(y));
+
 interface IdentifyResult {
   layerBodId: string;
   geometry?: { type: string; coordinates: unknown };

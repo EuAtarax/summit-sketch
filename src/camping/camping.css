@@ -561,14 +561,77 @@ body,
   accent-color: var(--ink);
 }
 
+/*
+ * Phones: a low bottom sheet, so the analysed area stays visible above it and every change
+ * shows on the map at once. The title goes, the tabs stay pinned while the sheet scrolls, and
+ * explanations show one line until tapped.
+ */
 @media (max-width: 640px) {
   .panel {
-    left: 8px;
-    right: 8px;
+    left: 0;
+    right: 0;
     width: auto;
     top: auto;
-    bottom: 8px;
-    max-height: 62%;
+    bottom: 0;
+    max-height: 42%;
+    gap: 8px;
+    padding: 4px 12px calc(10px + env(safe-area-inset-bottom));
+    border-radius: 14px 14px 0 0;
+    font-size: 0.875rem;
+  }
+
+  .panel h1,
+  .panel .tagline {
+    display: none;
+  }
+
+  .tabs {
+    position: sticky;
+    top: -4px;
+    z-index: 1;
+    box-shadow: 0 4px 6px -4px rgb(31 42 51 / 0.35);
+  }
+
+  .tab {
+    min-height: 40px;
+  }
+
+  .tab-body,
+  .group {
+    gap: 10px;
+  }
+
+  .slider small:not(.expanded),
+  .check small:not(.expanded) {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .slider small,
+  .check small {
+    cursor: pointer;
+  }
+
+  /* Legend on one row, opacity and area size side by side below it. */
+  .view-controls {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 4px 10px;
+  }
+
+  .view-controls .legend {
+    grid-column: 1 / -1;
+  }
+
+  .view-controls select {
+    min-height: 40px;
+  }
+
+  .notice {
+    padding: 6px 8px;
+    font-size: 0.75rem;
   }
 }
 

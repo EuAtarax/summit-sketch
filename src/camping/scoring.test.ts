@@ -7,6 +7,7 @@ import {
   nearnessFactor,
   pickSpots,
   TRAIL_CLEARANCE_M,
+  TRAIL_QUIET_M,
   type NearbyParams,
 } from './scoring';
 
@@ -59,11 +60,14 @@ describe('campScore', () => {
     expect(far).toBeCloseTo(FLOORS.trail * FLOORS.water * FLOORS.drinking, 6);
   });
 
-  it('does not suggest the path itself', () => {
-    const onPath = one({ trailDistance: Float32Array.of(TRAIL_CLEARANCE_M - 1) });
-    const beside = one({ trailDistance: Float32Array.of(TRAIL_CLEARANCE_M + 20) });
-    expect(onPath).toBeLessThan(0.3);
-    expect(beside).toBe(1);
+  it('does not suggest the path itself, and prefers ground away from it', () => {
+    const at = (d: number) => one({ trailDistance: Float32Array.of(d) });
+    expect(at(TRAIL_CLEARANCE_M - 1)).toBeLessThan(0.3);
+    expect(at(20)).toBeGreaterThan(at(TRAIL_CLEARANCE_M - 1));
+    expect(at(40)).toBeGreaterThan(at(20));
+    expect(at(40)).toBeLessThan(1);
+    expect(at(TRAIL_QUIET_M)).toBe(1);
+    expect(at(250)).toBe(1); // still within the preferred 300 m
   });
 
   it('ignores a preference that is switched off', () => {
