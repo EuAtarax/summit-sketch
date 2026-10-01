@@ -75,7 +75,8 @@ describe('Austria (BEV)', () => {
 describe('France (IGN)', () => {
   it('asks for a box in EPSG:3035, easting first', () => {
     const url = new URL(ignUrl('terrain', 4_078_000, 2_539_000, 4_080_000, 2_541_000, 1000, 1000));
-    expect(url.searchParams.get('SRS')).toBe('EPSG:3035');
+    expect(url.searchParams.get('CRS')).toBe('EPSG:3035');
+    expect(url.searchParams.get('VERSION')).toBe('1.3.0'); // the only version IGN accepts
     expect(url.searchParams.get('BBOX')).toBe('4078000,2539000,4080000,2541000');
     expect(url.searchParams.get('FORMAT')).toBe('image/geotiff');
   });

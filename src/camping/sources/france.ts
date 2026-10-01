@@ -17,7 +17,10 @@ const LAYERS = {
 /** Pixels per side of one request. */
 const PIECE = 1000;
 
-/** GetMap for a box in EPSG:3035 (WMS 1.1.1: always easting, northing). */
+/**
+ * GetMap for a box in EPSG:3035. The service only speaks WMS 1.3.0 and reads this CRS's box as
+ * easting, northing (checked: the answer's origin is the box's west and north edge).
+ */
 export function ignUrl(
   layer: keyof typeof LAYERS,
   e0: number,
@@ -29,11 +32,11 @@ export function ignUrl(
 ): string {
   const params = new URLSearchParams({
     SERVICE: 'WMS',
-    VERSION: '1.1.1',
+    VERSION: '1.3.0',
     REQUEST: 'GetMap',
     LAYERS: LAYERS[layer],
     STYLES: '',
-    SRS: 'EPSG:3035',
+    CRS: 'EPSG:3035',
     BBOX: `${e0},${n0},${e1},${n1}`,
     WIDTH: String(width),
     HEIGHT: String(height),
