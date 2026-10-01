@@ -123,7 +123,7 @@ export const NEARBY_CONTROLS: readonly {
     min: -1000,
     max: 1000,
     step: 25,
-    help: '+ prefers spots within this distance of a path, so you can reach them; - prefers spots at least this far from any path. Ground on the path itself is never suggested.',
+    help: '+ prefers spots within this distance of a path, so you can reach them, but not right next to it: ground near a path scores lower, fully from 60 m away. - prefers spots at least this far from any path. Ground on the path itself is never suggested.',
   },
   {
     key: 'water',

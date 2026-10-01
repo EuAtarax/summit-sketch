@@ -2,7 +2,7 @@
 
 A free, mobile-first browser app (PWA) with two tools.
 
-- **Camping spot finder (the landing page, `index.html`, Switzerland only for now).** The user taps a spot on a swisstopo map and gets a heatmap of pitchable ground from 2 m terrain data, with tunable thresholds, hiking trails and protected-area overlays. Code in `src/camping/`. This is the current focus.
+- **Camping spot finder (the landing page, `index.html`; Switzerland, Liechtenstein, Austria and France).** The user taps a spot on the map and gets a heatmap of pitchable ground from 1-2 m terrain data, with tunable thresholds, hiking trails, water, protected areas and the camping rules of the place. Code in `src/camping/`. This is the current focus.
 - **Panorama (`panorama.html`, worldwide).** The user picks a summit anywhere on Earth and gets a stylized 360° panorama of everything visible from there, with several visual styles, optional peak labels, and export as an image.
 
 Read `docs/PLAN.md` (phases and acceptance criteria) and `docs/STYLES.md` (style specs) before starting any phase.
@@ -12,7 +12,7 @@ Read `docs/PLAN.md` (phases and acceptance criteria) and `docs/STYLES.md` (style
 - **Free or very cheap to run.** The app itself is static (GitHub Pages). Small hosted pieces are fine when they unlock data or features: a proxy (e.g. to add CORS to an open data server), a database, an offline precompute job, preferably on free tiers and at most a few euros a month. API keys are fine when they are free or very cheap; a key that must stay secret lives in the hosted piece, never in the client bundle. Do not use Google Maps, Google 3D Tiles, Mapbox, or anything with usage-priced tiers that could run up a bill.
 - **The analysis runs client-side**, in the user's browser. Offline precomputation (e.g. prediction rasters) is fine when the result is served as static files.
 - **Mobile-first.** The app must stay responsive on a mid-range phone. Heavy work runs in Web Workers, and the main thread never blocks for more than ~50 ms.
-- **Worldwide coverage for the panorama.** Never hardcode anything to the Alps there. The camping finder is Switzerland-only on purpose (it needs swisstopo's 2 m terrain and BAFU data); keep its data providers behind interfaces so other countries can follow.
+- **Worldwide coverage for the panorama.** Never hardcode anything to the Alps there. The camping finder covers only countries with fine (1-2 m), browser-readable terrain data (see `docs/DATA-EUROPE.md`); each country is a terrain source in `camping/sources/` plus an entry in `camping/countries.ts`, so more can follow.
 - **Respect data providers.** Follow their usage policies, cache aggressively, and show attribution in the app and on every exported image.
 
 ## Stack
@@ -37,6 +37,10 @@ Keep dependencies minimal. Ask before adding any dependency larger than ~50 kB g
 | Map picker tiles | OpenStreetMap standard tiles, OpenTopoMap (terrain), EOX Sentinel-2 cloudless (satellite) | Light use with attribution is fine. Providers live in `ui/mapConfig.ts`. EOX is CC BY-NC-SA 4.0: the app must stay non-commercial. |
 | Swiss terrain and maps (camping finder, Switzerland only) | swisstopo: swissALTI3D and swissSURFACE3D Cloud-Optimized GeoTIFFs via the STAC API (`data.geo.admin.ch`), WMTS tiles (`wmts.geo.admin.ch`), BAFU layers via `api3.geo.admin.ch` | Open Government Data: free including commercial use, source "© swisstopo" required. All CORS-open. Read with range requests or whole small files, in LV95 (`camping/lv95.ts`). |
 | Trails, water, drinking water (camping finder) | OSM via Overpass, one query per analysis box | `way[highway=path|footway|track...]`, `waterway`, `natural=water`, `amenity=drinking_water`, `natural=spring`. Cached a week in IndexedDB; same retry rules as the peaks. Endpoint configurable with `VITE_OVERPASS_URL`. |
+| Austrian terrain (camping finder) | BEV ALS DTM and DSM, 1 m COGs (BigTIFF, 50 km tiles in EPSG:3035, overviews), `data.bev.gv.at` read through our Cloudflare Worker proxy (`proxy/`, `camp-spots.shitlas-trash.workers.dev`, `VITE_BEV_PROXY_URL`) | CC BY 4.0, credit "BEV". The BEV sends no CORS header, hence the proxy; it only forwards ALS GeoTIFF ranges for the app's origins. |
+| French terrain (camping finder) | IGN RGE ALTI and MNS through the Géoplateforme raw WMS (`data.geopf.fr/wms-r`, WMS 1.3.0 only, EPSG:3035, float32 GeoTIFF) | Licence Ouverte, credit "IGN". No key, CORS-open; answers are uncompressed (4 MB per 1000 x 1000 px), so boxes are asked for in pieces. |
+| Protected areas outside Switzerland (camping finder) | EEA ArcGIS services: Natura 2000 (`Natura2000Sites` layers 0 and 1) and nationally designated areas (`NatDAv24_Dyna_WM` layer 3), outlines requested in the grid CRS | Strictly protected and IUCN Ia/Ib areas restrict ground; the rest are listed. National rules still apply. |
+| Country and region at a spot (camping finder) | geo.admin.ch identify in Switzerland, else Nominatim reverse (`zoom=10`) | One request per tap, throttled to 1/s and cached; gives the ISO region code for the rules. |
 | Camping rules (camping finder) | `src/camping/rules/` (hand-curated, sourced entries per country, canton or Bundesland, and commune); canton and commune at a spot from the geo.admin.ch identify service (swissBOUNDARIES3D, one year via `timeInstant`) | Every entry names its sources, a verification level (law text read, or a summary that names the law) and the date checked. Texts describe the law and never say a spot is allowed (a test enforces this). |
 | Protected areas (camping finder) | BAFU layers via `api3.geo.admin.ch` identify | Eight federal inventories as polygons, with protection periods. Federal law only; cantonal and local rules are not covered, so the UI must never say a spot is allowed. |
 
@@ -54,7 +58,8 @@ src/
   render/     ViewTransform (projection), style registry, styles/*, shared noise/brush utils
   ui/         map picker, summit sheet, panorama viewer, style picker, export
   search/     Nominatim client (submit-only, throttled)
-  camping/    Switzerland camping finder: COG reader, LV95, slope/roughness/vegetation analysis,
+  camping/    camping finder: GeoTIFF/COG reader, LV95 and EPSG:3035, terrain sources per country (sources/),
+              rules database (rules/), slope/roughness/vegetation analysis,
               suitability and camp score, OSM features, protected areas, distance rasters, heatmap,
               settings, panel, analysis worker, page (main.ts)
   cache/      small IndexedDB cache used by peaks and the camping finder

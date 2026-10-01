@@ -15,11 +15,13 @@ const FRANCE_BOUNDS: L.LatLngBoundsLiteral = [
   [41.3, -5.3],
   [51.2, 9.7],
 ];
-/** The Alps from the French side to Vienna: where the covered countries' mountains are. */
-const START_BOUNDS: L.LatLngBoundsLiteral = [
-  [44.0, 5.0],
-  [48.6, 16.5],
-];
+/** The first view: all of Switzerland, the country with the most data. */
+const START_BOUNDS = SWITZERLAND_BOUNDS;
+/**
+ * swisstopo's maps are blank outside Switzerland at small scales (a white ring around the
+ * country); below this zoom the map that covers everywhere shows instead.
+ */
+const SWISS_MIN_ZOOM = 10;
 export const SWISSTOPO =
   '© <a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">swisstopo</a>';
 const BASES: Record<BaseMapId, string> = {
@@ -33,6 +35,7 @@ interface TileSpec {
   attribution: string;
   maxNativeZoom: number;
   subdomains?: string;
+  minZoom?: number;
   /** Only load tiles here (national maps answer 404 outside their country anyway). */
   bounds?: L.LatLngBoundsLiteral;
 }
@@ -52,7 +55,13 @@ const STACKS: Record<BaseMapId, readonly TileSpec[]> = {
       maxNativeZoom: 17,
       subdomains: 'abc',
     },
-    { url: BASES.map, attribution: SWISSTOPO, maxNativeZoom: 18, bounds: SWITZERLAND_BOUNDS },
+    {
+      url: BASES.map,
+      attribution: SWISSTOPO,
+      maxNativeZoom: 18,
+      minZoom: SWISS_MIN_ZOOM,
+      bounds: SWITZERLAND_BOUNDS,
+    },
   ],
   aerial: [
     { url: sentinel.url, attribution: sentinel.attribution, maxNativeZoom: 14 },
@@ -70,7 +79,13 @@ const STACKS: Record<BaseMapId, readonly TileSpec[]> = {
       maxNativeZoom: 19,
       bounds: AUSTRIA_BOUNDS,
     },
-    { url: BASES.aerial, attribution: SWISSTOPO, maxNativeZoom: 20, bounds: SWITZERLAND_BOUNDS },
+    {
+      url: BASES.aerial,
+      attribution: SWISSTOPO,
+      maxNativeZoom: 20,
+      minZoom: SWISS_MIN_ZOOM,
+      bounds: SWITZERLAND_BOUNDS,
+    },
   ],
 };
 /** Pane above the heatmap for trails, protected areas and markers, so they stay readable. */
@@ -150,6 +165,7 @@ export function createBaseMap(
         maxZoom: 20,
         attribution: spec.attribution,
         ...(spec.subdomains ? { subdomains: spec.subdomains } : {}),
+        ...(spec.minZoom ? { minZoom: spec.minZoom } : {}),
         ...(spec.bounds ? { bounds: L.latLngBounds(spec.bounds) } : {}),
       }).addTo(map),
     );

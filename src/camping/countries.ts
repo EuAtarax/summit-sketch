@@ -18,8 +18,6 @@ export interface CountryInfo {
   terrainCredit: string;
   /** Protected areas: Swiss federal inventories (BAFU) or the EU's (EEA) services. */
   protection: 'bafu' | 'eea';
-  /** Largest box with vegetation height (the surface model is a big download), km. */
-  maxCanopyKm: number;
 }
 
 export const COUNTRIES: Record<CountryId, CountryInfo> = {
@@ -31,7 +29,6 @@ export const COUNTRIES: Record<CountryId, CountryInfo> = {
     terrainCredit:
       'Terrain: swissALTI3D © <a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">swisstopo</a>',
     protection: 'bafu',
-    maxCanopyKm: 1,
   },
   at: {
     id: 'at',
@@ -41,7 +38,6 @@ export const COUNTRIES: Record<CountryId, CountryInfo> = {
     terrainCredit:
       'Terrain: ALS DGM/DOM <a href="https://www.bev.gv.at" target="_blank" rel="noopener">BEV</a> (CC BY 4.0)',
     protection: 'eea',
-    maxCanopyKm: 2,
   },
   fr: {
     id: 'fr',
@@ -51,7 +47,6 @@ export const COUNTRIES: Record<CountryId, CountryInfo> = {
     terrainCredit:
       'Terrain: RGE ALTI, MNS © <a href="https://www.ign.fr" target="_blank" rel="noopener">IGN</a> (Licence Ouverte)',
     protection: 'eea',
-    maxCanopyKm: 1,
   },
 };
 

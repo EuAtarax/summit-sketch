@@ -2,7 +2,7 @@
 
 A free, static, client-side web app (PWA) with two tools:
 
-- **Camping spot finder** (`index.html`, the landing page, Switzerland only): tap a spot on the swisstopo map and get a heatmap of pitchable ground from 2 m terrain data, the best spots nearby, trails, water and drinking-water sources, and protected areas.
+- **Camping spot finder** (`index.html`, the landing page; Switzerland, Liechtenstein, Austria and France): tap a spot on the map and get a heatmap of pitchable ground from 1-2 m terrain data, the best spots nearby, trails, water and drinking-water sources, protected areas, and the camping rules of the canton or Bundesland.
 - **Panorama** (`panorama.html`, worldwide): a stylized 360 degree view of everything visible from a summit, with labels and image export.
 
 Everything runs in the browser; there is no backend and no API key. See `docs/PLAN.md` for the plan and `CLAUDE.md` for the constraints.
@@ -22,7 +22,8 @@ npm run dev       # dev server, open http://localhost:5173/summit-sketch/
 
 - `VITE_OVERPASS_URL`: replaces the public Overpass server (a mirror, or a local fake for browser tests), for example `VITE_OVERPASS_URL=http://localhost:8787/api npm run dev`.
 - `BASE_PATH`: the URL base for the build (default `/summit-sketch/`).
+- `VITE_BEV_PROXY_URL`: the proxy for Austria's elevation data (default `https://camp-spots.shitlas-trash.workers.dev`, see `proxy/README.md`).
 
 ## Data
 
-Swiss terrain and maps: swisstopo (swissALTI3D, swissSURFACE3D, WMTS tiles), protected areas: FOEN (BAFU), all open government data (source "(c) swisstopo"). Trails, water and drinking water: OpenStreetMap contributors via Overpass. Place search: Nominatim on submit, swisstopo SearchServer for type-ahead suggestions in the camping finder. Panorama elevation: AWS Terrain Tiles. Satellite layer of the panorama map picker: EOX Sentinel-2 cloudless (CC BY-NC-SA 4.0, so the app must stay non-commercial). Details and usage rules are in `CLAUDE.md`.
+Swiss terrain and maps: swisstopo (swissALTI3D, swissSURFACE3D, WMTS tiles), protected areas: FOEN (BAFU), all open government data (source "(c) swisstopo"). Austrian terrain: BEV ALS DTM and DSM (CC BY 4.0) through our proxy; aerial images basemap.at. French terrain and aerial images: IGN (Licence Ouverte). Protected areas outside Switzerland: EEA (Natura 2000, nationally designated areas). Base map outside Switzerland: OpenTopoMap. Hiking routes: Waymarked Trails. Country and region at a spot: geo.admin.ch, else Nominatim reverse. Which European countries could follow, and why: `docs/DATA-EUROPE.md`. Trails, water and drinking water: OpenStreetMap contributors via Overpass. Place search: Nominatim on submit, swisstopo SearchServer for type-ahead suggestions in the camping finder. Panorama elevation: AWS Terrain Tiles. Satellite layer of the panorama map picker: EOX Sentinel-2 cloudless (CC BY-NC-SA 4.0, so the app must stay non-commercial). Details and usage rules are in `CLAUDE.md`.

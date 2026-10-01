@@ -74,6 +74,19 @@ export function tabs(items: readonly TabItem[]): HTMLElement {
   return el('div', { className: 'tabbed' }, strip, ...items.map((i) => i.content));
 }
 
+/**
+ * An explanation under a control. On phones it shows one line until tapped (see camping.css);
+ * tapping it again folds it.
+ */
+function expandable(text: string): HTMLElement {
+  const small = el('small', { textContent: text });
+  small.onclick = (e) => {
+    e.preventDefault(); // inside a label: do not toggle the checkbox
+    small.classList.toggle('expanded');
+  };
+  return small;
+}
+
 /** A checkbox with a label and an optional explanation. */
 export function checkRow(
   label: string,
@@ -84,7 +97,7 @@ export function checkRow(
   const input = el('input', { type: 'checkbox', checked });
   input.onchange = () => onChange(input.checked);
   const text = el('span', {}, label);
-  if (help) text.append(el('small', { textContent: help }));
+  if (help) text.append(expandable(help));
   return { node: el('label', { className: 'check' }, input, text), input };
 }
 
@@ -124,7 +137,7 @@ export function sliderRow(
     'div',
     { className: 'slider' },
     el('div', { className: 'slider-head' }, el('span', { textContent: c.label }), output),
-    el('small', { textContent: c.help }),
+    expandable(c.help),
     input,
   );
   return {

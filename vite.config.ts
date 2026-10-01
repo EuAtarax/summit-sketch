@@ -33,7 +33,7 @@ export default defineConfig({
         name: 'Summit Sketch',
         short_name: 'Summit Sketch',
         description:
-          'Find flat, quiet places to camp in Switzerland, and see the 360° panorama from any summit.',
+          'Find flat, quiet places to camp in Switzerland, Austria and France, and see the 360° panorama from any summit.',
         theme_color: '#1F2A33',
         background_color: '#F4F6F7',
         display: 'standalone',

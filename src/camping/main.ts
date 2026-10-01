@@ -102,7 +102,11 @@ const panel = createPanel(app, settings, {
   },
   onSpotSelect: focusSpot,
   onLocate: locate,
-  onOpenChange: (panelOpen) => update({ panelOpen }),
+  onOpenChange(panelOpen) {
+    update({ panelOpen });
+    // After the sheet is laid out, so its height is known.
+    if (panelOpen) requestAnimationFrame(keepSpotAboveSheet);
+  },
 });
 panel.syncFrom(settings);
 showBase(settings.base);
@@ -128,6 +132,19 @@ let outline: L.Polygon | null = null;
 let overlay: L.ImageOverlay | null = null;
 const client = new AnalysisClient();
 const spotProgress = createSpotProgress(map);
+
+/**
+ * On phones the options are a sheet over the lower part of the map: move the map so the chosen
+ * spot sits in the visible part above it, where heatmap changes can be watched.
+ */
+function keepSpotAboveSheet(): void {
+  if (!spot || !window.matchMedia('(max-width: 640px)').matches) return;
+  const sheet = document.querySelector<HTMLElement>('.panel');
+  if (!sheet || sheet.hidden) return;
+  const visible = map.getSize().y - sheet.offsetHeight;
+  const y = map.latLngToContainerPoint([spot.lat, spot.lon]).y;
+  if (y > visible - 40 || y < 70) map.panBy([0, y - visible / 2], { animate: true });
+}
 
 let selectSeq = 0;
 
